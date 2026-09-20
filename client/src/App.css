@@ -15,6 +15,7 @@ body {
   gap: 10px;
 }
 
+/* ============ PLAYER AREAS ============ */
 .player-area {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 12px;
@@ -45,7 +46,16 @@ body {
   font-weight: bold;
   font-size: 12px;
 }
+.skip-badge {
+  background: #c73650;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: bold;
+}
 
+/* ============ CARD ROWS ============ */
 .hand-row, .power-row, .fund-row, .sets-row {
   display: flex;
   flex-wrap: wrap;
@@ -63,9 +73,12 @@ body {
   border: 2px solid #c9a227;
 }
 
+/* ============ MINI CARD ============ */
 .mini-card {
   width: 80px;
   height: 112px;
+  min-width: 80px;      /* ← KEY: prevents stretching */
+  max-width: 80px;      /* ← KEY: prevents stretching */
   border-radius: 8px;
   padding: 5px;
   display: flex;
@@ -91,6 +104,8 @@ body {
 .mini-card.small {
   width: 55px;
   height: 78px;
+  min-width: 55px;
+  max-width: 55px;
   font-size: 8px;
 }
 .card-type {
@@ -103,6 +118,7 @@ body {
   font-weight: bold;
   line-height: 1.1;
   font-size: 10px;
+  word-break: break-word;
 }
 .card-value {
   font-size: 11px;
@@ -110,9 +126,12 @@ body {
   text-align: right;
 }
 
+/* ============ CARD BACK ============ */
 .card-back {
   width: 80px;
   height: 112px;
+  min-width: 80px;
+  max-width: 80px;
   border-radius: 8px;
   background: #f5f0e8;
   border: 2px solid #333;
@@ -126,6 +145,8 @@ body {
 .card-back.small {
   width: 55px;
   height: 78px;
+  min-width: 55px;
+  max-width: 55px;
 }
 .card-back-logo {
   font-weight: bold;
@@ -135,6 +156,7 @@ body {
   line-height: 1.2;
 }
 
+/* ============ MIDDLE BAR ============ */
 .middle {
   display: flex;
   justify-content: space-between;
@@ -143,6 +165,11 @@ body {
   background: rgba(0,0,0,0.3);
   border-radius: 10px;
   font-size: 14px;
+  gap: 16px;
+}
+.pile-info {
+  font-size: 12px;
+  opacity: 0.8;
 }
 .turn-indicator {
   font-weight: bold;
@@ -150,11 +177,13 @@ body {
   font-size: 16px;
 }
 
+/* ============ CONTROLS ============ */
 .controls {
   display: flex;
   gap: 10px;
   justify-content: center;
   padding: 8px;
+  flex-wrap: wrap;
 }
 .controls button {
   background: #e94560;
@@ -167,9 +196,14 @@ body {
   font-weight: bold;
 }
 .controls button:hover { background: #c73650; }
+.controls button:disabled {
+  background: #555;
+  cursor: not-allowed;
+}
 .controls button.secondary { background: #444; }
 .controls button.secondary:hover { background: #555; }
 
+/* ============ LOG ============ */
 .log {
   background: rgba(0,0,0,0.4);
   border-radius: 8px;
@@ -182,6 +216,7 @@ body {
 }
 .log div { padding: 1px 0; }
 
+/* ============ WIN SCREEN ============ */
 .app {
   display: flex;
   flex-direction: column;
@@ -202,4 +237,153 @@ body {
   border-radius: 8px;
   cursor: pointer;
   font-weight: bold;
+}
+
+/* ============ MODALS ============ */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal {
+  background: #252547;
+  border: 2px solid #e94560;
+  border-radius: 16px;
+  padding: 28px;
+  max-width: 500px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.modal-wide {
+  max-width: 900px;
+}
+
+.modal h2 {
+  font-size: 1.6rem;
+  margin-bottom: 8px;
+  color: #e94560;
+}
+
+.modal-subtitle {
+  color: #aaa;
+  font-size: 0.95rem;
+  margin-bottom: 20px;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.modal-buttons button {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 24px;
+  font-size: 1rem;
+  border-radius: 10px;
+  min-width: 180px;
+  cursor: pointer;
+  border: none;
+  color: white;
+  font-weight: bold;
+}
+
+.btn-fund { background: #2d8f4e; }
+.btn-fund:hover { background: #236f3d; }
+
+.btn-action { background: #c9a227; color: #000; }
+.btn-action:hover { background: #b08f20; }
+
+.btn-sub {
+  font-size: 0.75rem;
+  opacity: 0.85;
+  font-weight: normal;
+}
+
+.btn-cancel {
+  background: transparent;
+  color: #aaa;
+  border: 1px solid #444;
+  padding: 8px 20px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.btn-cancel:hover {
+  background: #333;
+  color: #fff;
+}
+
+.btn-confirm {
+  background: #e94560;
+  padding: 12px 32px;
+  font-size: 1rem;
+  border-radius: 8px;
+  margin-top: 20px;
+  font-weight: bold;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+.btn-confirm:disabled {
+  background: #666;
+  cursor: not-allowed;
+}
+
+.trim-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 10px;
+}/* ============ DISCARD PILE ============ */
+.discard-pile {
+  background: rgba(199, 54, 80, 0.15);
+  border: 2px solid #c73650;
+  border-radius: 12px;
+  padding: 10px;
+  margin: 8px 0;
+}
+
+.discard-label {
+  font-size: 12px;
+  font-weight: bold;
+  color: #c73650;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.discard-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Dim hand when player can't play */
+.hand-row.disabled .mini-card {
+  cursor: not-allowed;
+  filter: grayscale(0.6);
+  opacity: 0.6;
+}
+.hand-row.disabled .mini-card:hover {
+  transform: none;
+  box-shadow: none;
 }

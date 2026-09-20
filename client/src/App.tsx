@@ -11,15 +11,27 @@ interface Player {
   powerCards: string[];
   completedSets: string[][];
   rank: 0 | 1 | 2 | 3;
+  skipTurns: number;
 }
 
 interface GameState {
   players: Player[];
   drawPile: string[];
+  commonDiscard: string[];
+  centralBank: string[];
   currentTurn: number;
+  cardsPlayedThisTurn: number;   // ← NEW
+  turnStarted: boolean;           // ← NEW: track if we've drawn this turn
   winnerSeat: number | null;
   log: string[];
 }
+
+type PendingChoice =
+  | { type: 'action-choice'; cardId: string }
+  | { type: 'hand-trim' }
+  | null;
+
+const MAX_PLAYS_PER_TURN = 3;
 
 // ============ HELPERS ============
 function shuffle<T>(arr: T[]): T[] {
@@ -41,21 +53,24 @@ function dealCards(): GameState {
     powerCards: [],
     completedSets: [],
     rank: 0,
+    skipTurns: 0,
   }));
   return {
     players,
     drawPile: deck,
+    commonDiscard: [],
+    centralBank: [],
     currentTurn: 0,
+    cardsPlayedThisTurn: 0,
+    turnStarted: false,
     winnerSeat: null,
-    log: ['Game started. Player 1 goes first.'],
+    log: ['Game started. Player 1: click "Start Turn" to begin.'],
   };
 }
 
-// Try to form complete sets from loose power cards
 function regroupPowerCards(player: Player): string[][] {
   const loose = [...player.powerCards];
   const sets: string[][] = [];
-
   const bySet: Record<string, string[]> = {};
   const wilds: string[] = [];
 
@@ -82,12 +97,7 @@ function regroupPowerCards(player: Player): string[][] {
     }
   }
 
-  const remaining = [
-    ...Object.values(bySet).flat(),
-    ...wilds,
-  ];
-
-  player.powerCards = remaining;
+  player.powerCards = [...Object.values(bySet).flat(), ...wilds];
   return sets;
 }
 
@@ -95,90 +105,201 @@ function recalcRank(player: Player) {
   player.rank = Math.min(player.completedSets.length, 3) as 0 | 1 | 2 | 3;
 }
 
+function cloneGame(g: GameState): GameState {
+  return {
+    ...g,
+    players: g.players.map(p => ({
+      ...p,
+      hand: [...p.hand],
+      campaignFund: [...p.campaignFund],
+      powerCards: [...p.powerCards],
+      completedSets: p.completedSets.map(s => [...s]),
+    })),
+    drawPile: [...g.drawPile],
+    commonDiscard: [...g.commonDiscard],
+    centralBank: [...g.centralBank],
+    log: [...g.log],
+  };
+}
+
+// Draw N cards, reshuffling discard if the draw pile runs dry
+function drawN(g: GameState, seat: number, count: number) {
+  const p = g.players[seat];
+  for (let i = 0; i < count; i++) {
+    if (g.drawPile.length === 0) {
+      g.drawPile = shuffle(g.commonDiscard);
+      g.commonDiscard = [];
+      g.log.push('Draw pile empty — reshuffled discard.');
+    }
+    if (g.drawPile.length === 0) break;
+    p.hand.push(g.drawPile.pop()!);
+  }
+}
+
 // ============ MAIN APP ============
 function App() {
   const [game, setGame] = useState<GameState>(() => dealCards());
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
+  const [pendingChoice, setPendingChoice] = useState<PendingChoice>(null);
 
   const currentPlayer = game.players[game.currentTurn];
+  const playsRemaining = MAX_PLAYS_PER_TURN - game.cardsPlayedThisTurn;
+  const canPlay = playsRemaining > 0 && game.turnStarted;
 
-  function drawCards(seat: number, count: number) {
+  // ============ ACTIONS ============
+
+  function startTurn() {
     setGame(g => {
-      const newGame = { ...g, players: g.players.map(p => ({ ...p, hand: [...p.hand] })), drawPile: [...g.drawPile], log: [...g.log] };
-      const p = newGame.players[seat];
-      for (let i = 0; i < count; i++) {
-        if (newGame.drawPile.length === 0) break;
-        p.hand.push(newGame.drawPile.pop()!);
+      if (g.turnStarted) return g;
+      const newGame = cloneGame(g);
+      const p = newGame.players[g.currentTurn];
+
+      // Skip?
+      if (p.skipTurns > 0) {
+        p.skipTurns--;
+        newGame.log.push(`${p.name} misses a turn (${p.skipTurns} remaining).`);
+        newGame.currentTurn = (g.currentTurn + 1) % newGame.players.length;
+        newGame.cardsPlayedThisTurn = 0;
+        newGame.turnStarted = false;
+        newGame.log.push(`--- ${newGame.players[newGame.currentTurn].name}'s turn ---`);
+        return newGame;
       }
-      newGame.log.push(`${p.name} drew ${count} cards.`);
+
+      const drawCount = p.hand.length <= 2 ? 5 : 2;
+      drawN(newGame, g.currentTurn, drawCount);
+      newGame.log.push(`${p.name} drew ${drawCount} card${drawCount > 1 ? 's' : ''}.`);
+      newGame.turnStarted = true;
+      newGame.cardsPlayedThisTurn = 0;
       return newGame;
     });
   }
 
-  function playCard(cardId: string) {
+  function playAsFund(cardId: string) {
     setGame(g => {
-      const newGame = {
-        ...g,
-        players: g.players.map(p => ({
-          ...p,
-          hand: [...p.hand],
-          campaignFund: [...p.campaignFund],
-          powerCards: [...p.powerCards],
-          completedSets: [...p.completedSets],
-        })),
-        log: [...g.log],
-      };
+      if (g.cardsPlayedThisTurn >= MAX_PLAYS_PER_TURN) return g;
+      const newGame = cloneGame(g);
       const p = newGame.players[newGame.currentTurn];
-      const card = getCardById(cardId);
-
       p.hand = p.hand.filter(id => id !== cardId);
-
-      if (card.type === 'MONEY') {
-        p.campaignFund.push(cardId);
-        newGame.log.push(`${p.name} banked ${card.name} (${card.bankValue} BN).`);
-      } else if (card.type === 'POWER') {
-        p.powerCards.push(cardId);
-        const newSets = regroupPowerCards(p);
-        if (newSets.length > 0) {
-          p.completedSets = [...p.completedSets, ...newSets];
-          recalcRank(p);
-          newGame.log.push(`${p.name} completed a set! Now rank ${p.rank}.`);
-          if (p.completedSets.length >= 3) {
-            newGame.winnerSeat = p.seat;
-            newGame.log.push(`🏆 ${p.name} is now PRESIDENT!`);
-          }
-        } else {
-          newGame.log.push(`${p.name} played ${card.name} to their table.`);
-        }
-      } else {
-        p.campaignFund.push(cardId);
-        newGame.log.push(`${p.name} played ${card.name} (effect coming next).`);
-      }
-
+      p.campaignFund.push(cardId);
+      const card = getCardById(cardId);
+      newGame.log.push(`${p.name} banked ${card.name} as Fund (${card.bankValue} BN).`);
+      newGame.cardsPlayedThisTurn++;
       return newGame;
     });
     setSelectedCard(null);
+    setPendingChoice(null);
+  }
+
+  function playAsAction(cardId: string) {
+    setGame(g => {
+      if (g.cardsPlayedThisTurn >= MAX_PLAYS_PER_TURN) return g;
+      const newGame = cloneGame(g);
+      const p = newGame.players[newGame.currentTurn];
+      const card = getCardById(cardId);
+      p.hand = p.hand.filter(id => id !== cardId);
+      newGame.commonDiscard.push(cardId);
+      newGame.cardsPlayedThisTurn++;
+
+      // --- Real effects for Action Cards played as Action ---
+      if (card.effectKey === 'recount') {
+        drawN(newGame, newGame.currentTurn, 2);
+        newGame.log.push(`${p.name} played Ballot Recount — drew 2 extra cards.`);
+      } else {
+        newGame.log.push(`${p.name} played ${card.name} as Action. (Effect coming soon)`);
+      }
+      return newGame;
+    });
+    setSelectedCard(null);
+    setPendingChoice(null);
+  }
+
+  function playPower(cardId: string) {
+    setGame(g => {
+      if (g.cardsPlayedThisTurn >= MAX_PLAYS_PER_TURN) return g;
+      const newGame = cloneGame(g);
+      const p = newGame.players[newGame.currentTurn];
+      const card = getCardById(cardId);
+      p.hand = p.hand.filter(id => id !== cardId);
+      p.powerCards.push(cardId);
+      newGame.cardsPlayedThisTurn++;
+
+      const newSets = regroupPowerCards(p);
+      if (newSets.length > 0) {
+        p.completedSets = [...p.completedSets, ...newSets];
+        recalcRank(p);
+        newGame.log.push(`${p.name} completed a set! Rank ${p.rank}.`);
+        if (p.completedSets.length >= 3) {
+          newGame.winnerSeat = p.seat;
+          newGame.log.push(`🏆 ${p.name} is PRESIDENT!`);
+        }
+      } else {
+        newGame.log.push(`${p.name} played ${card.name} to their table.`);
+      }
+      return newGame;
+    });
+    setSelectedCard(null);
+    setPendingChoice(null);
+  }
+
+  function handleCardClick(cardId: string) {
+    if (!canPlay) return;
+    const card = getCardById(cardId);
+
+    if (card.type === 'MONEY') {
+      playAsFund(cardId);
+    } else if (card.type === 'POWER') {
+      playPower(cardId);
+    } else if (card.type === 'ACTION') {
+      setPendingChoice({ type: 'action-choice', cardId });
+    }
   }
 
   function endTurn() {
     setGame(g => {
-      const newGame = { ...g, players: g.players.map(p => ({ ...p, hand: [...p.hand] })), log: [...g.log] };
+      const newGame = cloneGame(g);
       const p = newGame.players[newGame.currentTurn];
-      while (p.hand.length > 7) {
-        p.hand.pop();
+
+      // Hand trim if needed
+      if (p.hand.length > 7) {
+        setTimeout(() => setPendingChoice({ type: 'hand-trim' }), 0);
+        return newGame; // don't advance yet
       }
+
+      // Advance turn
       newGame.currentTurn = (newGame.currentTurn + 1) % newGame.players.length;
+      newGame.cardsPlayedThisTurn = 0;
+      newGame.turnStarted = false;
       newGame.log.push(`--- ${newGame.players[newGame.currentTurn].name}'s turn ---`);
       return newGame;
     });
     setSelectedCard(null);
   }
 
+  function confirmHandTrim(keepIds: string[]) {
+    setGame(g => {
+      const newGame = cloneGame(g);
+      const p = newGame.players[newGame.currentTurn];
+      const discarded = p.hand.filter(id => !keepIds.includes(id));
+      p.hand = keepIds;
+      newGame.drawPile = [...discarded, ...newGame.drawPile];
+      newGame.log.push(`${p.name} discarded ${discarded.length} cards to the bottom of the deck.`);
+
+      newGame.currentTurn = (newGame.currentTurn + 1) % newGame.players.length;
+      newGame.cardsPlayedThisTurn = 0;
+      newGame.turnStarted = false;
+      newGame.log.push(`--- ${newGame.players[newGame.currentTurn].name}'s turn ---`);
+      return newGame;
+    });
+    setPendingChoice(null);
+  }
+
   function resetGame() {
     setGame(dealCards());
     setSelectedCard(null);
+    setPendingChoice(null);
   }
 
+  // ============ RENDER ============
   if (game.winnerSeat !== null) {
     return (
       <div className="app">
@@ -190,28 +311,76 @@ function App() {
 
   return (
     <div className="game-board">
+      {/* Opponent */}
       <PlayerArea player={game.players[1 - game.currentTurn]} isOpponent />
+
+      {/* Middle: Center piles */}
       <div className="middle">
-        <div className="deck-info">Draw Pile: {game.drawPile.length} cards</div>
+        <div className="pile-info">Draw: {game.drawPile.length}</div>
+        <div className="pile-info">Bank: {game.centralBank.length}</div>
         <div className="turn-indicator">{currentPlayer.name}'s turn</div>
+        <div className="pile-info">
+          Plays: {playsRemaining}/{MAX_PLAYS_PER_TURN}
+        </div>
+        <div className="pile-info">Discard: {game.commonDiscard.length}</div>
       </div>
+
+      {/* Discard pile visualization */}
+      {game.commonDiscard.length > 0 && (
+        <div className="discard-pile">
+          <div className="discard-label">🗑 Common Discard Pile (Action Cards)</div>
+          <div className="discard-cards">
+            {game.commonDiscard.map(id => (
+              <MiniCard key={id} cardId={id} small />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Current Player */}
       <PlayerArea
         player={currentPlayer}
         isOpponent={false}
-        onCardClick={playCard}
+        onCardClick={handleCardClick}
         selectedCard={selectedCard}
         setSelectedCard={setSelectedCard}
+        canPlay={canPlay}
       />
+
+      {/* Controls */}
       <div className="controls">
-        <button onClick={() => drawCards(game.currentTurn, 2)}>Draw 2</button>
-        <button onClick={endTurn}>End Turn</button>
+        {!game.turnStarted && (
+          <button onClick={startTurn}>Start Turn (Draw)</button>
+        )}
+        <button onClick={endTurn} disabled={pendingChoice !== null}>
+          End Turn
+        </button>
         <button onClick={resetGame} className="secondary">Restart</button>
       </div>
+
+      {/* Log */}
       <div className="log">
-        {game.log.slice(-5).map((line, i) => (
+        {game.log.slice(-8).map((line, i) => (
           <div key={i}>{line}</div>
         ))}
       </div>
+
+      {/* Modals */}
+      {pendingChoice?.type === 'action-choice' && (
+        <ActionChoiceModal
+          cardId={pendingChoice.cardId}
+          onFund={() => playAsFund(pendingChoice.cardId)}
+          onAction={() => playAsAction(pendingChoice.cardId)}
+          onCancel={() => setPendingChoice(null)}
+        />
+      )}
+
+      {pendingChoice?.type === 'hand-trim' && (
+        <HandTrimModal
+          hand={currentPlayer.hand}
+          onSubmit={confirmHandTrim}
+        />
+      )}
     </div>
   );
 }
@@ -223,21 +392,26 @@ function PlayerArea({
   onCardClick,
   selectedCard,
   setSelectedCard,
+  canPlay,
 }: {
   player: Player;
   isOpponent: boolean;
   onCardClick?: (id: string) => void;
   selectedCard?: string | null;
   setSelectedCard?: (id: string | null) => void;
+  canPlay?: boolean;
 }) {
+  const fundValue = player.campaignFund.reduce((s, id) => s + getCardById(id).bankValue, 0);
+
   return (
     <div className={`player-area ${isOpponent ? 'opponent' : 'current'}`}>
       <div className="player-header">
         <strong>{player.name}</strong>
         <span className="rank-badge">Rank {player.rank}</span>
         <span>Hand: {player.hand.length}</span>
-        <span>Fund: {player.campaignFund.reduce((s, id) => s + getCardById(id).bankValue, 0)} BN</span>
+        <span>Fund: {fundValue} BN</span>
         <span>Sets: {player.completedSets.length}/3</span>
+        {player.skipTurns > 0 && <span className="skip-badge">Skip: {player.skipTurns}</span>}
       </div>
 
       {player.completedSets.length > 0 && (
@@ -262,7 +436,7 @@ function PlayerArea({
         </div>
       )}
 
-      <div className="hand-row">
+      <div className={`hand-row ${!canPlay && !isOpponent ? 'disabled' : ''}`}>
         {player.hand.map(id => (
           <MiniCard
             key={id}
@@ -322,6 +496,105 @@ function MiniCard({
       <div className="card-type">{card.type}</div>
       <div className="card-name">{card.name}</div>
       <div className="card-value">{card.bankValue} BN</div>
+    </div>
+  );
+}
+
+// ============ MODALS ============
+function ActionChoiceModal({
+  cardId,
+  onFund,
+  onAction,
+  onCancel,
+}: {
+  cardId: string;
+  onFund: () => void;
+  onAction: () => void;
+  onCancel: () => void;
+}) {
+  const card = getCardById(cardId);
+
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h2>{card.name}</h2>
+        <p className="modal-subtitle">
+          {card.bankValue} BN value · Choose how to play
+        </p>
+        <div className="modal-buttons">
+          <button className="btn-fund" onClick={onFund}>
+            💰 Play as Fund
+            <span className="btn-sub">{card.bankValue} BN</span>
+          </button>
+          <button className="btn-action" onClick={onAction}>
+            ⚡ Play as Action
+            <span className="btn-sub">Resolve effect</span>
+          </button>
+        </div>
+        <button className="btn-cancel" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function HandTrimModal({
+  hand,
+  onSubmit,
+}: {
+  hand: string[];
+  onSubmit: (keepIds: string[]) => void;
+}) {
+  const [keep, setKeep] = useState<string[]>(hand.slice(0, 7));
+
+  function toggle(id: string) {
+    if (keep.includes(id)) {
+      setKeep(keep.filter(k => k !== id));
+    } else {
+      if (keep.length < 7) {
+        setKeep([...keep, id]);
+      }
+    }
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal modal-wide">
+        <h2>Discard Down to 7</h2>
+        <p className="modal-subtitle">
+          Your hand has {hand.length} cards. Select {hand.length - 7} to discard.
+          Currently keeping {keep.length}/7.
+        </p>
+        <div className="trim-cards">
+          {hand.map(id => {
+            const card = getCardById(id);
+            const colors: Record<string, string> = {
+              MONEY: '#2d8f4e',
+              POWER: '#c9a227',
+              ACTION: '#c73650',
+            };
+            const isKept = keep.includes(id);
+            return (
+              <div
+                key={id}
+                className={`mini-card ${isKept ? 'selected' : ''}`}
+                style={{ background: colors[card.type], opacity: isKept ? 1 : 0.4 }}
+                onClick={() => toggle(id)}
+              >
+                <div className="card-type">{card.type}</div>
+                <div className="card-name">{card.name}</div>
+                <div className="card-value">{card.bankValue} BN</div>
+              </div>
+            );
+          })}
+        </div>
+        <button
+          className="btn-confirm"
+          onClick={() => onSubmit(keep)}
+          disabled={keep.length !== 7}
+        >
+          Confirm Discard ({hand.length - keep.length} discarded)
+        </button>
+      </div>
     </div>
   );
 }
