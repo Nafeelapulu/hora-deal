@@ -386,4 +386,12 @@ body {
 .hand-row.disabled .mini-card:hover {
   transform: none;
   box-shadow: none;
+}/* ============ CENTRAL BANK PILE ============ */
+.bank-pile {
+  background: rgba(201, 162, 39, 0.15);
+  border: 2px solid #c9a227;
+}
+
+.bank-pile .discard-label {
+  color: #c9a227;
 }
