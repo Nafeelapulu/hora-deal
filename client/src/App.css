@@ -394,4 +394,13 @@ body {
 
 .bank-pile .discard-label {
   color: #c9a227;
+}/* ============ WILD CARD REORDER ============ */
+.mini-card.wild-clickable {
+  cursor: pointer;
+  box-shadow: 0 0 0 2px #ff79c6;
+  transition: all 0.15s;
+}
+.mini-card.wild-clickable:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 0 0 3px #ff79c6, 0 8px 20px rgba(255, 121, 198, 0.6);
 }

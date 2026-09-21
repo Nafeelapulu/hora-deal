@@ -34,12 +34,12 @@ type PendingChoice =
   | { type: 'wild-choice'; cardId: string }
   | { type: 'coalition-mine'; cardId: string; targetSeat: number }
   | { type: 'coalition-theirs'; cardId: string; targetSeat: number; myCardId: string }
-  | { type: 'reaction'; 
+  | { type: 'wild-reorder'; wildId: string }
+  | { type: 'reaction';
       actingCardId: string;
       actingPlayerSeat: number;
       targetSeat: number;
       purpose: string;
-      // Stored effect data so we can resume if accepted
       pendingEffect:
         | { kind: 'target-action'; purpose: string; targetSeat: number }
         | { kind: 'doctorate' }
@@ -201,22 +201,17 @@ function checkWinAndSets(newGame: GameState, seat: number) {
   }
 }
 
-// Which reaction cards can cancel a given action purpose?
-// Returns list of effectKeys the target could use
 function getAvailableReactions(target: Player, purpose: string): string[] {
   const options: string[] = [];
   const hasMathaka = target.hand.some(id => getCardById(id).effectKey === 'mathaka');
   const hasFather = target.hand.some(id => getCardById(id).effectKey === 'father');
   const hasProtest = target.hand.some(id => getCardById(id).effectKey === 'protest');
 
-  // Mathaka Na only cancels miss-turn cards
   const missTurnCards = ['fcid', 'white_van', 'injunction', 'prorogued'];
   if (missTurnCards.includes(purpose) && hasMathaka) {
     options.push('mathaka');
   }
-  // Do You Know My Father cancels any Action
   if (hasFather) options.push('father');
-  // Public Protest cancels any Action
   if (hasProtest) options.push('protest');
   return options;
 }
@@ -286,7 +281,6 @@ function App() {
     }), 0);
   }
 
-  // Resolve the actual effect of a targeting action
   function resolveTargetAction(newGame: GameState, purpose: string, targetSeat: number) {
     const me = newGame.players[newGame.currentTurn];
     const target = newGame.players[targetSeat];
@@ -399,8 +393,7 @@ function App() {
           other.skipTurns += 1;
           newGame.log.push(`${other.name} will miss their next turn.`);
         }
-        // Extra turn: turnStarted stays true so they can play more
-        newGame.cardsPlayedThisTurn = 0; // Reset for extra turn
+        newGame.cardsPlayedThisTurn = 0;
         newGame.log.push(`${me.name} takes an extra turn immediately!`);
         break;
       }
@@ -437,11 +430,9 @@ function App() {
 
         case 'doctorate':
           newGame.log.push(`${p.name} played Honorary Doctorate — others pay 2 BN.`);
-          // Simplified: only first other player for now
           {
             const target = newGame.players.find(pl => pl.seat !== newGame.currentTurn);
             if (target) {
-              // Check for reaction
               const reactions = getAvailableReactions(target, 'doctorate');
               if (reactions.length > 0) {
                 setTimeout(() => setPendingChoice({
@@ -480,7 +471,6 @@ function App() {
           break;
         }
 
-        // All targeting cards
         case 'mahanayake':
         case 'strike':
         case 'coalition':
@@ -535,6 +525,88 @@ function App() {
     if (pendingChoice?.type !== 'wild-choice') setPendingChoice(null);
   }
 
+  // ===== WILD REORDER =====
+  function startWildReorder(wildId: string) {
+    if (!canPlay) return;
+    setPendingChoice({ type: 'wild-reorder', wildId });
+  }
+
+  function resolveWildReorder(destinationSetKey: string | 'loose') {
+    if (pendingChoice?.type !== 'wild-reorder') return;
+    const wildId = pendingChoice.wildId;
+
+    setGame(g => {
+      if (g.cardsPlayedThisTurn >= MAX_PLAYS_PER_TURN) return g;
+      const newGame = cloneGame(g);
+      const p = newGame.players[newGame.currentTurn];
+
+      // Find where the wild currently is
+      let setIdx = -1;
+      for (let i = 0; i < p.completedSets.length; i++) {
+        if (p.completedSets[i].includes(wildId)) { setIdx = i; break; }
+      }
+      const wasInSet = setIdx >= 0;
+      const isLoose = p.powerCards.includes(wildId);
+      if (!wasInSet && !isLoose) return newGame;
+
+      const wildCard = getCardById(wildId);
+      if (!wildCard.isWild) return newGame;
+
+      // 1. Remove wild from current location
+      let brokeSet: string[] = [];
+      if (wasInSet) {
+        const oldSet = p.completedSets[setIdx];
+        const remaining = oldSet.filter(id => id !== wildId);
+        p.completedSets = p.completedSets.filter((_, i) => i !== setIdx);
+        p.powerCards.push(...remaining);
+        brokeSet = remaining;
+        recalcRank(p);
+      } else {
+        p.powerCards = p.powerCards.filter(id => id !== wildId);
+      }
+
+      // 2. Handle destination
+      if (destinationSetKey === 'loose') {
+        p.powerCards.push(wildId);
+        newGame.log.push(`${p.name} moved Common Candidate to loose Power.`);
+        if (brokeSet.length > 0) newGame.log.push(`(A set was broken — cards went loose.)`);
+      } else {
+        const group = p.powerCards.filter(id => {
+          const c = getCardById(id);
+          return !c.isWild && c.setKey === destinationSetKey;
+        });
+        if (group.length === 0) {
+          p.powerCards.push(wildId);
+          newGame.log.push(`${p.name} moved Common Candidate to loose Power.`);
+          return newGame;
+        }
+        const sample = getCardById(group[0]);
+        const setSize = sample.setSize!;
+        const combined = [...group, wildId];
+
+        if (combined.length >= setSize) {
+          p.powerCards = p.powerCards.filter(id => !group.includes(id) && id !== wildId);
+          p.completedSets.push(combined.slice(0, setSize));
+          recalcRank(p);
+          newGame.log.push(`${p.name} completed a set with Common Candidate! Rank ${p.rank}.`);
+          if (p.completedSets.length >= 3) {
+            newGame.winnerSeat = p.seat;
+            newGame.log.push(`🏆 ${p.name} is PRESIDENT!`);
+          }
+        } else {
+          p.powerCards.push(wildId);
+          newGame.log.push(`${p.name} added Common Candidate to ${sample.name} (${combined.length}/${setSize}).`);
+        }
+        if (brokeSet.length > 0) newGame.log.push(`(A previous set was broken — its cards went loose.)`);
+      }
+
+      newGame.cardsPlayedThisTurn++;
+      return newGame;
+    });
+
+    setPendingChoice(null);
+  }
+
   function resolveWildChoice(setKey: string | 'loose') {
     if (pendingChoice?.type !== 'wild-choice') return;
     const wildId = pendingChoice.cardId;
@@ -580,14 +652,11 @@ function App() {
     else if (card.type === 'ACTION') setPendingChoice({ type: 'action-choice', cardId });
   }
 
-  // ============ TARGET + REACTION ============
   function selectTarget(targetSeat: number) {
     if (pendingChoice?.type !== 'select-target') return;
     const { purpose, cardId } = pendingChoice;
 
-    // Coalition special flow
     if (purpose === 'coalition') {
-      // Check reaction first
       const target = game.players[targetSeat];
       const reactions = getAvailableReactions(target, 'coalition');
       if (reactions.length > 0) {
@@ -601,12 +670,10 @@ function App() {
         });
         return;
       }
-      // No reaction — proceed to coalition pick modal
       setPendingChoice({ type: 'coalition-mine', cardId, targetSeat });
       return;
     }
 
-    // For all other targeting cards, check if target has reactions
     const target = game.players[targetSeat];
     const reactions = getAvailableReactions(target, purpose);
 
@@ -622,7 +689,6 @@ function App() {
       return;
     }
 
-    // No reactions — resolve immediately
     setGame(g => {
       const newGame = cloneGame(g);
       resolveTargetAction(newGame, purpose, targetSeat);
@@ -631,7 +697,6 @@ function App() {
     setPendingChoice(null);
   }
 
-  // When target accepts (does not react)
   function acceptReaction() {
     if (pendingChoice?.type !== 'reaction') return;
     const { pendingEffect } = pendingChoice;
@@ -640,7 +705,6 @@ function App() {
       const newGame = cloneGame(g);
       if (pendingEffect.kind === 'target-action') {
         if (pendingEffect.purpose === 'coalition') {
-          // Coalition accepted — go to coalition pick modal
           setTimeout(() => setPendingChoice({
             type: 'coalition-mine',
             cardId: pendingChoice.actingCardId,
@@ -664,7 +728,6 @@ function App() {
     }
   }
 
-  // When target uses a reaction card
   function playReaction(reactionEffectKey: string) {
     if (pendingChoice?.type !== 'reaction') return;
     const { actingCardId, targetSeat, actingPlayerSeat } = pendingChoice;
@@ -674,17 +737,10 @@ function App() {
       const target = newGame.players[targetSeat];
       const acting = newGame.players[actingPlayerSeat];
 
-      // Find and remove the reaction card from target's hand
       const reactionCardId = target.hand.find(id => getCardById(id).effectKey === reactionEffectKey);
       if (!reactionCardId) return newGame;
       target.hand = target.hand.filter(id => id !== reactionCardId);
-
-      // Send reaction card to common discard
       newGame.commonDiscard.push(reactionCardId);
-
-      // Also send the acting card to discard (it was played but cancelled)
-      // The acting card was already added to commonDiscard in playAsAction,
-      // so no need to add again.
 
       const reactingCard = getCardById(reactionCardId);
       const actingCard = getCardById(actingCardId);
@@ -694,7 +750,6 @@ function App() {
     setPendingChoice(null);
   }
 
-  // Coalition pick steps (unchanged)
   function coalitionChooseMine(myCardId: string) {
     if (pendingChoice?.type !== 'coalition-mine') return;
     setPendingChoice({
@@ -724,45 +779,43 @@ function App() {
     setPendingChoice(null);
   }
 
- function confirmPayment(cardIds: string[]) {
-  if (pendingChoice?.type !== 'payment') return;
-  const { payer, payee } = pendingChoice;
-  setGame(g => {
-    const newGame = cloneGame(g);
-    const payerP = newGame.players[payer];
-    removePaidCards(payerP, cardIds);
-    const value = cardIds.reduce((s, id) => s + getCardById(id).bankValue, 0);
-    if (payee === 'bank') {
-      newGame.centralBank.push(...cardIds);
-      newGame.log.push(`${payerP.name} paid ${value} BN to Central Bank.`);
-    } else {
-      const receiver = newGame.players[payee];
-      // Route each paid card based on type
-      for (const id of cardIds) {
-        const card = getCardById(id);
-        if (card.type === 'POWER') {
-          receiver.powerCards.push(id);
-        } else {
-          receiver.campaignFund.push(id);
+  function confirmPayment(cardIds: string[]) {
+    if (pendingChoice?.type !== 'payment') return;
+    const { payer, payee } = pendingChoice;
+    setGame(g => {
+      const newGame = cloneGame(g);
+      const payerP = newGame.players[payer];
+      removePaidCards(payerP, cardIds);
+      const value = cardIds.reduce((s, id) => s + getCardById(id).bankValue, 0);
+      if (payee === 'bank') {
+        newGame.centralBank.push(...cardIds);
+        newGame.log.push(`${payerP.name} paid ${value} BN to Central Bank.`);
+      } else {
+        const receiver = newGame.players[payee];
+        for (const id of cardIds) {
+          const card = getCardById(id);
+          if (card.type === 'POWER') {
+            receiver.powerCards.push(id);
+          } else {
+            receiver.campaignFund.push(id);
+          }
         }
-      }
-      // Check if new Power cards completed a set for the receiver
-      const newSets = regroupPowerCards(receiver);
-      if (newSets.length > 0) {
-        receiver.completedSets = [...receiver.completedSets, ...newSets];
-        recalcRank(receiver);
-        newGame.log.push(`${receiver.name} completed a set from payment! Rank ${receiver.rank}.`);
-        if (receiver.completedSets.length >= 3) {
-          newGame.winnerSeat = receiver.seat;
-          newGame.log.push(`🏆 ${receiver.name} is PRESIDENT!`);
+        const newSets = regroupPowerCards(receiver);
+        if (newSets.length > 0) {
+          receiver.completedSets = [...receiver.completedSets, ...newSets];
+          recalcRank(receiver);
+          newGame.log.push(`${receiver.name} completed a set from payment! Rank ${receiver.rank}.`);
+          if (receiver.completedSets.length >= 3) {
+            newGame.winnerSeat = receiver.seat;
+            newGame.log.push(`🏆 ${receiver.name} is PRESIDENT!`);
+          }
         }
+        newGame.log.push(`${payerP.name} paid ${value} BN to ${receiver.name}.`);
       }
-      newGame.log.push(`${payerP.name} paid ${value} BN to ${receiver.name}.`);
-    }
-    return newGame;
-  });
-  setPendingChoice(null);
-}
+      return newGame;
+    });
+    setPendingChoice(null);
+  }
 
   function endTurn() {
     setGame(g => {
@@ -817,7 +870,6 @@ function App() {
     ? findWildTargets(currentPlayer)
     : [];
 
-  // Reactions available for the current pending reaction choice
   const reactionOptions = pendingChoice?.type === 'reaction'
     ? getAvailableReactions(game.players[pendingChoice.targetSeat], pendingChoice.purpose)
     : [];
@@ -861,6 +913,7 @@ function App() {
         selectedCard={selectedCard}
         setSelectedCard={setSelectedCard}
         canPlay={canPlay}
+        onWildClick={startWildReorder}
       />
 
       <div className="controls">
@@ -925,6 +978,15 @@ function App() {
         />
       )}
 
+      {pendingChoice?.type === 'wild-reorder' && (
+        <WildReorderModal
+          player={currentPlayer}
+          wildId={pendingChoice.wildId}
+          onChoose={resolveWildReorder}
+          onCancel={() => setPendingChoice(null)}
+        />
+      )}
+
       {pendingChoice?.type === 'reaction' && (
         <ReactionModal
           actingPlayer={game.players[pendingChoice.actingPlayerSeat]}
@@ -940,13 +1002,16 @@ function App() {
 }
 
 // ============ PLAYER AREA ============
-function PlayerArea({ player, isOpponent, onCardClick, selectedCard, setSelectedCard, canPlay }: {
+function PlayerArea({
+  player, isOpponent, onCardClick, selectedCard, setSelectedCard, canPlay, onWildClick,
+}: {
   player: Player;
   isOpponent: boolean;
   onCardClick?: (id: string) => void;
   selectedCard?: string | null;
   setSelectedCard?: (id: string | null) => void;
   canPlay?: boolean;
+  onWildClick?: (id: string) => void;
 }) {
   const fundValue = player.campaignFund.reduce((s, id) => s + getCardById(id).bankValue, 0);
 
@@ -965,7 +1030,18 @@ function PlayerArea({ player, isOpponent, onCardClick, selectedCard, setSelected
         <div className="sets-row">
           {player.completedSets.map((set, i) => (
             <div key={i} className="completed-set">
-              {set.map(id => <MiniCard key={id} cardId={id} />)}
+              {set.map(id => {
+                const card = getCardById(id);
+                const clickable = !isOpponent && card.isWild && onWildClick && canPlay;
+                return (
+                  <MiniCard
+                    key={id}
+                    cardId={id}
+                    wildClickable={!!clickable}
+                    onClick={clickable ? () => onWildClick!(id) : undefined}
+                  />
+                );
+              })}
             </div>
           ))}
         </div>
@@ -973,7 +1049,18 @@ function PlayerArea({ player, isOpponent, onCardClick, selectedCard, setSelected
 
       {player.powerCards.length > 0 && (
         <div className="power-row">
-          {player.powerCards.map(id => <MiniCard key={id} cardId={id} />)}
+          {player.powerCards.map(id => {
+            const card = getCardById(id);
+            const clickable = !isOpponent && card.isWild && onWildClick && canPlay;
+            return (
+              <MiniCard
+                key={id}
+                cardId={id}
+                wildClickable={!!clickable}
+                onClick={clickable ? () => onWildClick!(id) : undefined}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -1001,8 +1088,13 @@ function PlayerArea({ player, isOpponent, onCardClick, selectedCard, setSelected
 }
 
 // ============ CARD ============
-function MiniCard({ cardId, small, hidden, selected, onClick }: {
-  cardId: string; small?: boolean; hidden?: boolean; selected?: boolean; onClick?: () => void;
+function MiniCard({ cardId, small, hidden, selected, onClick, wildClickable }: {
+  cardId: string;
+  small?: boolean;
+  hidden?: boolean;
+  selected?: boolean;
+  onClick?: () => void;
+  wildClickable?: boolean;
 }) {
   const card = getCardById(cardId);
   const colors: Record<string, string> = { MONEY: '#2d8f4e', POWER: '#c9a227', ACTION: '#c73650' };
@@ -1014,8 +1106,12 @@ function MiniCard({ cardId, small, hidden, selected, onClick }: {
     );
   }
   return (
-    <div className={`mini-card ${small ? 'small' : ''} ${selected ? 'selected' : ''}`}
-      style={{ background: colors[card.type] }} onClick={onClick} title={card.name}>
+    <div
+      className={`mini-card ${small ? 'small' : ''} ${selected ? 'selected' : ''} ${wildClickable ? 'wild-clickable' : ''}`}
+      style={{ background: colors[card.type] }}
+      onClick={onClick}
+      title={wildClickable ? `${card.name} — click to move` : card.name}
+    >
       <div className="card-type">{card.type}</div>
       <div className="card-name">{card.name}</div>
       <div className="card-value">{card.bankValue} BN</div>
@@ -1164,10 +1260,16 @@ function PaymentModal({ payer, amount, onConfirm }: {
             const card = getCardById(id);
             const colors: Record<string, string> = { MONEY: '#2d8f4e', POWER: '#c9a227', ACTION: '#c73650' };
             const isSelected = selected.includes(id);
+            const inSet = payer.completedSets.some(set => set.includes(id));
             return (
               <div key={id} className={`mini-card ${isSelected ? 'selected' : ''}`}
-                style={{ background: colors[card.type], opacity: isSelected ? 1 : 0.7 }}
-                onClick={() => toggle(id)}>
+                style={{
+                  background: colors[card.type],
+                  opacity: isSelected ? 1 : 0.7,
+                  border: inSet ? '3px solid #c9a227' : undefined,
+                }}
+                onClick={() => toggle(id)}
+                title={inSet ? `${card.name} (in a completed set)` : card.name}>
                 <div className="card-type">{card.type}</div>
                 <div className="card-name">{card.name}</div>
                 <div className="card-value">{card.bankValue} BN</div>
@@ -1253,6 +1355,59 @@ function CoalitionPickCardModal({ cards, title, onPick, onCancel }: {
             <button className="btn-cancel" onClick={onCancel}>Cancel</button>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ============ WILD REORDER MODAL ============
+function WildReorderModal({ player, wildId, onChoose, onCancel }: {
+  player: Player;
+  wildId: string;
+  onChoose: (destinationSetKey: string | 'loose') => void;
+  onCancel: () => void;
+}) {
+  const destinations: { setKey: string; setSize: number; existing: string[] }[] = [];
+  const groups: Record<string, string[]> = {};
+  for (const id of player.powerCards) {
+    const c = getCardById(id);
+    if (c.isWild || !c.setKey) continue;
+    groups[c.setKey] = groups[c.setKey] || [];
+    groups[c.setKey].push(id);
+  }
+  for (const [key, cards] of Object.entries(groups)) {
+    const sample = getCardById(cards[0]);
+    const setSize = sample.setSize!;
+    const realCount = cards.length;
+    const needed = setSize - realCount;
+    if (needed > 0 && realCount >= 1) {
+      destinations.push({ setKey: key, setSize, existing: cards });
+    }
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal modal-wide">
+        <h2>Move Common Candidate</h2>
+        <p className="modal-subtitle">
+          Choose a destination. Costs 1 play. Pulling from a completed set will break it.
+        </p>
+        <div className="modal-buttons">
+          {destinations.map(t => {
+            const sample = getCardById(t.existing[0]);
+            return (
+              <button key={t.setKey} className="btn-action" onClick={() => onChoose(t.setKey)}>
+                📦 {sample.name}
+                <span className="btn-sub">{t.existing.length}/{t.setSize} existing</span>
+              </button>
+            );
+          })}
+          <button className="btn-fund" onClick={() => onChoose('loose')}>
+            🃏 Keep as Loose
+            <span className="btn-sub">No set assignment</span>
+          </button>
+        </div>
+        <button className="btn-cancel" onClick={onCancel}>Cancel</button>
       </div>
     </div>
   );
