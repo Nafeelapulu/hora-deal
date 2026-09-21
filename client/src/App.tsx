@@ -724,26 +724,45 @@ function App() {
     setPendingChoice(null);
   }
 
-  function confirmPayment(cardIds: string[]) {
-    if (pendingChoice?.type !== 'payment') return;
-    const { payer, payee } = pendingChoice;
-    setGame(g => {
-      const newGame = cloneGame(g);
-      const payerP = newGame.players[payer];
-      removePaidCards(payerP, cardIds);
-      const value = cardIds.reduce((s, id) => s + getCardById(id).bankValue, 0);
-      if (payee === 'bank') {
-        newGame.centralBank.push(...cardIds);
-        newGame.log.push(`${payerP.name} paid ${value} BN to Central Bank.`);
-      } else {
-        const receiver = newGame.players[payee];
-        receiver.campaignFund.push(...cardIds);
-        newGame.log.push(`${payerP.name} paid ${value} BN to ${receiver.name}.`);
+ function confirmPayment(cardIds: string[]) {
+  if (pendingChoice?.type !== 'payment') return;
+  const { payer, payee } = pendingChoice;
+  setGame(g => {
+    const newGame = cloneGame(g);
+    const payerP = newGame.players[payer];
+    removePaidCards(payerP, cardIds);
+    const value = cardIds.reduce((s, id) => s + getCardById(id).bankValue, 0);
+    if (payee === 'bank') {
+      newGame.centralBank.push(...cardIds);
+      newGame.log.push(`${payerP.name} paid ${value} BN to Central Bank.`);
+    } else {
+      const receiver = newGame.players[payee];
+      // Route each paid card based on type
+      for (const id of cardIds) {
+        const card = getCardById(id);
+        if (card.type === 'POWER') {
+          receiver.powerCards.push(id);
+        } else {
+          receiver.campaignFund.push(id);
+        }
       }
-      return newGame;
-    });
-    setPendingChoice(null);
-  }
+      // Check if new Power cards completed a set for the receiver
+      const newSets = regroupPowerCards(receiver);
+      if (newSets.length > 0) {
+        receiver.completedSets = [...receiver.completedSets, ...newSets];
+        recalcRank(receiver);
+        newGame.log.push(`${receiver.name} completed a set from payment! Rank ${receiver.rank}.`);
+        if (receiver.completedSets.length >= 3) {
+          newGame.winnerSeat = receiver.seat;
+          newGame.log.push(`🏆 ${receiver.name} is PRESIDENT!`);
+        }
+      }
+      newGame.log.push(`${payerP.name} paid ${value} BN to ${receiver.name}.`);
+    }
+    return newGame;
+  });
+  setPendingChoice(null);
+}
 
   function endTurn() {
     setGame(g => {
