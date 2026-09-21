@@ -8,7 +8,7 @@ interface Player {
   name: string;
   hand: string[];
   campaignFund: string[];
-  powerCards: string[];     // loose power cards (not yet in a set)
+  powerCards: string[];
   completedSets: string[][];
   rank: 0 | 1 | 2 | 3;
   skipTurns: number;
@@ -32,6 +32,19 @@ type PendingChoice =
   | { type: 'select-target'; cardId: string; purpose: string }
   | { type: 'payment'; payer: number; payee: number | 'bank'; amount: number }
   | { type: 'wild-choice'; cardId: string }
+  | { type: 'coalition-mine'; cardId: string; targetSeat: number }
+  | { type: 'coalition-theirs'; cardId: string; targetSeat: number; myCardId: string }
+  | { type: 'reaction'; 
+      actingCardId: string;
+      actingPlayerSeat: number;
+      targetSeat: number;
+      purpose: string;
+      // Stored effect data so we can resume if accepted
+      pendingEffect:
+        | { kind: 'target-action'; purpose: string; targetSeat: number }
+        | { kind: 'doctorate' }
+        | { kind: 'prorogued' };
+    }
   | null;
 
 const MAX_PLAYS_PER_TURN = 3;
@@ -71,22 +84,6 @@ function dealCards(): GameState {
   };
 }
 
-// Returns count of wilds currently in a set array
-function countWildsIn(cardIds: string[]): number {
-  return cardIds.filter(id => getCardById(id).isWild).length;
-}
-
-// Returns count of non-wild cards matching a given set key
-function countRealFor(cardIds: string[], setKey: string): number {
-  return cardIds.filter(id => {
-    const c = getCardById(id);
-    return !c.isWild && c.setKey === setKey;
-  }).length;
-}
-
-// Find valid incomplete sets on a player's table that a wild could join
-// A "target set" is defined by (setKey, setSize). Wild joins a set group.
-// The player's powerCards may contain multiple partial sets of different keys.
 function findWildTargets(player: Player): { setKey: string; setSize: number; existing: string[] }[] {
   const groups: Record<string, string[]> = {};
   for (const id of player.powerCards) {
@@ -95,24 +92,19 @@ function findWildTargets(player: Player): { setKey: string; setSize: number; exi
     groups[c.setKey] = groups[c.setKey] || [];
     groups[c.setKey].push(id);
   }
-
   const targets: { setKey: string; setSize: number; existing: string[] }[] = [];
   for (const [key, cards] of Object.entries(groups)) {
     const sample = getCardById(cards[0]);
     const setSize = sample.setSize!;
-    const wildsHere = 0; // wilds are kept loose, not in this group
-    const maxWilds = key === 'relations' ? 2 : 1;
     const realCount = cards.length;
     const needed = setSize - realCount;
-    // Wild can join if there's still room AND real count >= 1
-    if (needed > 0 && realCount >= 1 && wildsHere < maxWilds) {
+    if (needed > 0 && realCount >= 1) {
       targets.push({ setKey: key, setSize, existing: cards });
     }
   }
   return targets;
 }
 
-// Try to auto-form sets from loose power cards (NO auto-wild-joining)
 function regroupPowerCards(player: Player): string[][] {
   const loose = [...player.powerCards];
   const sets: string[][] = [];
@@ -129,8 +121,6 @@ function regroupPowerCards(player: Player): string[][] {
   for (const [key, cards] of Object.entries(bySet)) {
     const card = getCardById(cards[0]);
     const size = card.setSize!;
-    // Only form a set if we have enough real cards (no wilds in sets unless explicitly added)
-    // For "auto-form on play", we form sets when real cards alone reach setSize
     if (cards.length >= size) {
       sets.push(cards.slice(0, size));
       remaining.push(...cards.slice(size));
@@ -138,11 +128,9 @@ function regroupPowerCards(player: Player): string[][] {
       remaining.push(...cards);
     }
   }
-  // Add back wilds (they stay loose)
   for (const id of player.powerCards) {
     if (getCardById(id).isWild) remaining.push(id);
   }
-
   player.powerCards = remaining;
   return sets;
 }
@@ -189,23 +177,6 @@ function getPayableValue(player: Player): number {
   return getPayableCards(player).reduce((sum, id) => sum + getCardById(id).bankValue, 0);
 }
 
-function findExactMatch(payer: Player, amount: number): string[] | null {
-  const cards = getPayableCards(payer);
-  const target = amount;
-  const result: string[] = [];
-  function search(idx: number, sum: number): boolean {
-    if (sum === target) return true;
-    if (sum > target) return false;
-    if (idx >= cards.length) return false;
-    result.push(cards[idx]);
-    if (search(idx + 1, sum + getCardById(cards[idx]).bankValue)) return true;
-    result.pop();
-    return search(idx + 1, sum);
-  }
-  if (search(0, 0)) return [...result];
-  return null;
-}
-
 function removePaidCards(player: Player, cardIds: string[]) {
   const idSet = new Set(cardIds);
   player.campaignFund = player.campaignFund.filter(id => !idSet.has(id));
@@ -216,7 +187,6 @@ function removePaidCards(player: Player, cardIds: string[]) {
   recalcRank(player);
 }
 
-// Check if a player completed a full set after adding to power area, and if so win
 function checkWinAndSets(newGame: GameState, seat: number) {
   const p = newGame.players[seat];
   const newSets = regroupPowerCards(p);
@@ -229,6 +199,26 @@ function checkWinAndSets(newGame: GameState, seat: number) {
       newGame.log.push(`🏆 ${p.name} is PRESIDENT!`);
     }
   }
+}
+
+// Which reaction cards can cancel a given action purpose?
+// Returns list of effectKeys the target could use
+function getAvailableReactions(target: Player, purpose: string): string[] {
+  const options: string[] = [];
+  const hasMathaka = target.hand.some(id => getCardById(id).effectKey === 'mathaka');
+  const hasFather = target.hand.some(id => getCardById(id).effectKey === 'father');
+  const hasProtest = target.hand.some(id => getCardById(id).effectKey === 'protest');
+
+  // Mathaka Na only cancels miss-turn cards
+  const missTurnCards = ['fcid', 'white_van', 'injunction', 'prorogued'];
+  if (missTurnCards.includes(purpose) && hasMathaka) {
+    options.push('mathaka');
+  }
+  // Do You Know My Father cancels any Action
+  if (hasFather) options.push('father');
+  // Public Protest cancels any Action
+  if (hasProtest) options.push('protest');
+  return options;
 }
 
 // ============ MAIN APP ============
@@ -280,6 +270,143 @@ function App() {
     setPendingChoice(null);
   }
 
+  function requestPayment(g: GameState, payerSeat: number, payee: number | 'bank', amount: number) {
+    const payer = g.players[payerSeat];
+    const available = getPayableValue(payer);
+    const actualAmount = Math.min(amount, available);
+    if (actualAmount === 0) {
+      g.log.push(`${payer.name} has nothing to pay.`);
+      return;
+    }
+    setTimeout(() => setPendingChoice({
+      type: 'payment',
+      payer: payerSeat,
+      payee,
+      amount: actualAmount,
+    }), 0);
+  }
+
+  // Resolve the actual effect of a targeting action
+  function resolveTargetAction(newGame: GameState, purpose: string, targetSeat: number) {
+    const me = newGame.players[newGame.currentTurn];
+    const target = newGame.players[targetSeat];
+
+    switch (purpose) {
+      case 'strike':
+        requestPayment(newGame, targetSeat, 'bank', 2);
+        break;
+      case 'mahanayake':
+        requestPayment(newGame, targetSeat, 'bank', 4);
+        break;
+      case 'bribe': {
+        if (me.rank === 2) {
+          for (const other of newGame.players) {
+            if (other.seat === me.seat) continue;
+            requestPayment(newGame, other.seat, me.seat, 5);
+          }
+        } else {
+          const amount = me.rank === 0 ? 2 : 3;
+          requestPayment(newGame, targetSeat, me.seat, amount);
+        }
+        break;
+      }
+      case 'no_confidence': {
+        if (target.powerCards.length === 0) {
+          newGame.log.push(`${target.name} has no loose Power Cards.`);
+        } else {
+          const stolen = target.powerCards[0];
+          target.powerCards = target.powerCards.filter(id => id !== stolen);
+          me.powerCards.push(stolen);
+          newGame.log.push(`${me.name} stole ${getCardById(stolen).name} from ${target.name}.`);
+          checkWinAndSets(newGame, me.seat);
+        }
+        break;
+      }
+      case 'reshuffle': {
+        if (target.completedSets.length === 0) {
+          newGame.log.push(`${target.name} has no complete sets.`);
+        } else if (target.completedSets.length >= 3) {
+          newGame.log.push(`${target.name} has 3 sets — cannot target.`);
+        } else {
+          const stolenSet = target.completedSets[0];
+          target.completedSets = target.completedSets.slice(1);
+          recalcRank(target);
+          me.powerCards.push(...stolenSet);
+          newGame.log.push(`${me.name} stole a complete set from ${target.name}.`);
+          checkWinAndSets(newGame, me.seat);
+        }
+        break;
+      }
+      case 'coup': {
+        if (target.completedSets.length >= 3) {
+          newGame.log.push(`${target.name} has 3 sets — cannot target.`);
+        } else if (target.completedSets.length === 0) {
+          newGame.log.push(`${target.name} has no complete sets.`);
+        } else {
+          const stolen = target.completedSets.flat();
+          target.completedSets = [];
+          recalcRank(target);
+          me.powerCards.push(...stolen);
+          newGame.log.push(`${me.name} CoupLK'd ${target.name} — stole all sets!`);
+          checkWinAndSets(newGame, me.seat);
+        }
+        break;
+      }
+      case 'double_crossover': {
+        for (const other of newGame.players) {
+          if (other.seat === me.seat) continue;
+          const stolenLoose: string[] = [];
+          const stolenSets: string[] = [];
+          other.powerCards = other.powerCards.filter(id => {
+            if (getCardById(id).setKey === 'crossovers') { stolenLoose.push(id); return false; }
+            return true;
+          });
+          other.completedSets = other.completedSets.filter(set => {
+            const isCrossSet = set.length > 0 && getCardById(set[0]).setKey === 'crossovers';
+            if (isCrossSet) { stolenSets.push(...set); return false; }
+            return true;
+          });
+          recalcRank(other);
+          me.powerCards.push(...stolenLoose, ...stolenSets);
+          if (stolenLoose.length + stolenSets.length > 0) {
+            newGame.log.push(`${me.name} stole ${stolenLoose.length + stolenSets.length} Crossovers from ${other.name}.`);
+          }
+        }
+        checkWinAndSets(newGame, me.seat);
+        break;
+      }
+      case 'fcid':
+      case 'white_van':
+      case 'injunction':
+        target.skipTurns += 1;
+        newGame.log.push(`${target.name} will miss ${target.skipTurns} turn(s).`);
+        break;
+      case 'abolished': {
+        if (target.completedSets.length === 0) {
+          newGame.log.push(`${target.name} has no complete sets.`);
+        } else {
+          const stolen = target.completedSets[0];
+          target.completedSets = target.completedSets.slice(1);
+          recalcRank(target);
+          newGame.drawPile = [...stolen, ...newGame.drawPile];
+          newGame.log.push(`${me.name} abolished ${target.name}'s set — cards to bottom of deck.`);
+        }
+        break;
+      }
+      case 'parliament_prorogued': {
+        for (const other of newGame.players) {
+          if (other.seat === me.seat) continue;
+          other.skipTurns += 1;
+          newGame.log.push(`${other.name} will miss their next turn.`);
+        }
+        // Extra turn: turnStarted stays true so they can play more
+        newGame.cardsPlayedThisTurn = 0; // Reset for extra turn
+        newGame.log.push(`${me.name} takes an extra turn immediately!`);
+        break;
+      }
+    }
+  }
+
   function playAsAction(cardId: string) {
     setGame(g => {
       if (g.cardsPlayedThisTurn >= MAX_PLAYS_PER_TURN) return g;
@@ -308,30 +435,52 @@ function App() {
           break;
         }
 
-        case 'doctorate': {
+        case 'doctorate':
           newGame.log.push(`${p.name} played Honorary Doctorate — others pay 2 BN.`);
+          // Simplified: only first other player for now
+          {
+            const target = newGame.players.find(pl => pl.seat !== newGame.currentTurn);
+            if (target) {
+              // Check for reaction
+              const reactions = getAvailableReactions(target, 'doctorate');
+              if (reactions.length > 0) {
+                setTimeout(() => setPendingChoice({
+                  type: 'reaction',
+                  actingCardId: cardId,
+                  actingPlayerSeat: newGame.currentTurn,
+                  targetSeat: target.seat,
+                  purpose: 'doctorate',
+                  pendingEffect: { kind: 'doctorate' },
+                }), 0);
+              } else {
+                requestPayment(newGame, target.seat, newGame.currentTurn, 2);
+              }
+            }
+          }
+          break;
+
+        case 'prorogued': {
+          newGame.log.push(`${p.name} played Parliament Prorogued.`);
           const target = newGame.players.find(pl => pl.seat !== newGame.currentTurn);
           if (target) {
-            const available = getPayableValue(target);
-            const amt = Math.min(2, available);
-            if (amt === 0) {
-              newGame.log.push(`${target.name} has nothing to pay.`);
+            const reactions = getAvailableReactions(target, 'prorogued');
+            if (reactions.length > 0) {
+              setTimeout(() => setPendingChoice({
+                type: 'reaction',
+                actingCardId: cardId,
+                actingPlayerSeat: newGame.currentTurn,
+                targetSeat: target.seat,
+                purpose: 'prorogued',
+                pendingEffect: { kind: 'prorogued' },
+              }), 0);
             } else {
-              const exact = findExactMatch(target, amt);
-              if (exact) {
-                removePaidCards(target, exact);
-                p.campaignFund.push(...exact);
-                newGame.log.push(`${target.name} paid 2 BN (auto-matched).`);
-              } else {
-                setTimeout(() => setPendingChoice({
-                  type: 'payment', payer: target.seat, payee: newGame.currentTurn, amount: amt,
-                }), 0);
-              }
+              resolveTargetAction(newGame, 'parliament_prorogued', target.seat);
             }
           }
           break;
         }
 
+        // All targeting cards
         case 'mahanayake':
         case 'strike':
         case 'coalition':
@@ -358,7 +507,7 @@ function App() {
       return newGame;
     });
     setSelectedCard(null);
-    if (pendingChoice?.type !== 'select-target' && pendingChoice?.type !== 'payment') {
+    if (pendingChoice?.type !== 'select-target' && pendingChoice?.type !== 'payment' && pendingChoice?.type !== 'reaction') {
       setPendingChoice(null);
     }
   }
@@ -373,7 +522,6 @@ function App() {
       p.powerCards.push(cardId);
       newGame.cardsPlayedThisTurn++;
 
-      // Wild cards get their own flow
       if (card.isWild) {
         setTimeout(() => setPendingChoice({ type: 'wild-choice', cardId }), 0);
         newGame.log.push(`${p.name} played Common Candidate — choose which set.`);
@@ -381,49 +529,32 @@ function App() {
       }
 
       checkWinAndSets(newGame, newGame.currentTurn);
-      if (!newGame.log[newGame.log.length - 1].includes('completed')) {
-        newGame.log.push(`${p.name} played ${card.name} to their table.`);
-      }
       return newGame;
     });
     setSelectedCard(null);
     if (pendingChoice?.type !== 'wild-choice') setPendingChoice(null);
   }
 
-  // Handle wild card choice
   function resolveWildChoice(setKey: string | 'loose') {
     if (pendingChoice?.type !== 'wild-choice') return;
     const wildId = pendingChoice.cardId;
-
     setGame(g => {
       const newGame = cloneGame(g);
       const p = newGame.players[newGame.currentTurn];
-
       if (setKey === 'loose') {
-        // Wild stays as loose card
-        newGame.log.push(`${p.name}'s Common Candidate stays loose (no set chosen).`);
+        newGame.log.push(`${p.name}'s Common Candidate stays loose.`);
         return newGame;
       }
-
-      // Find the incomplete set group in powerCards with this key
       const group = p.powerCards.filter(id => {
         const c = getCardById(id);
         return !c.isWild && c.setKey === setKey;
       });
       if (group.length === 0) return newGame;
-
       const sample = getCardById(group[0]);
       const setSize = sample.setSize!;
-      const maxWilds = setKey === 'relations' ? 2 : 1;
-      const existingWildsInThisSet = 0; // wilds are loose currently
-
-      // Move wild from loose into this set
       p.powerCards = p.powerCards.filter(id => id !== wildId);
-
-      // Combine group + wild, check if full
       const combined = [...group, wildId];
-      if (combined.length >= setSize && existingWildsInThisSet < maxWilds) {
-        // Set complete — pull group + wild out of powerCards into completedSets
+      if (combined.length >= setSize) {
         p.powerCards = p.powerCards.filter(id => !combined.includes(id));
         p.completedSets = [...p.completedSets, combined.slice(0, setSize)];
         recalcRank(p);
@@ -433,12 +564,8 @@ function App() {
           newGame.log.push(`🏆 ${p.name} is PRESIDENT!`);
         }
       } else {
-        // Not complete — but we need the wild associated with this set
-        // We'll keep wild loose but log which set it's assigned to.
-        // For simplicity, just put it back as loose for now — a proper implementation
-        // would track "wild assigned to X" state.
         p.powerCards.push(wildId);
-        newGame.log.push(`${p.name} added Common Candidate to ${sample.name} set (${combined.length}/${setSize}).`);
+        newGame.log.push(`${p.name} added Common Candidate to ${sample.name} (${combined.length}/${setSize}).`);
       }
       return newGame;
     });
@@ -453,199 +580,145 @@ function App() {
     else if (card.type === 'ACTION') setPendingChoice({ type: 'action-choice', cardId });
   }
 
-  // ============ TARGET EFFECTS ============
+  // ============ TARGET + REACTION ============
   function selectTarget(targetSeat: number) {
     if (pendingChoice?.type !== 'select-target') return;
-    const { purpose } = pendingChoice;
+    const { purpose, cardId } = pendingChoice;
 
+    // Coalition special flow
+    if (purpose === 'coalition') {
+      // Check reaction first
+      const target = game.players[targetSeat];
+      const reactions = getAvailableReactions(target, 'coalition');
+      if (reactions.length > 0) {
+        setPendingChoice({
+          type: 'reaction',
+          actingCardId: cardId,
+          actingPlayerSeat: game.currentTurn,
+          targetSeat,
+          purpose: 'coalition',
+          pendingEffect: { kind: 'target-action', purpose: 'coalition', targetSeat },
+        });
+        return;
+      }
+      // No reaction — proceed to coalition pick modal
+      setPendingChoice({ type: 'coalition-mine', cardId, targetSeat });
+      return;
+    }
+
+    // For all other targeting cards, check if target has reactions
+    const target = game.players[targetSeat];
+    const reactions = getAvailableReactions(target, purpose);
+
+    if (reactions.length > 0) {
+      setPendingChoice({
+        type: 'reaction',
+        actingCardId: cardId,
+        actingPlayerSeat: game.currentTurn,
+        targetSeat,
+        purpose,
+        pendingEffect: { kind: 'target-action', purpose, targetSeat },
+      });
+      return;
+    }
+
+    // No reactions — resolve immediately
+    setGame(g => {
+      const newGame = cloneGame(g);
+      resolveTargetAction(newGame, purpose, targetSeat);
+      return newGame;
+    });
+    setPendingChoice(null);
+  }
+
+  // When target accepts (does not react)
+  function acceptReaction() {
+    if (pendingChoice?.type !== 'reaction') return;
+    const { pendingEffect } = pendingChoice;
+
+    setGame(g => {
+      const newGame = cloneGame(g);
+      if (pendingEffect.kind === 'target-action') {
+        if (pendingEffect.purpose === 'coalition') {
+          // Coalition accepted — go to coalition pick modal
+          setTimeout(() => setPendingChoice({
+            type: 'coalition-mine',
+            cardId: pendingChoice.actingCardId,
+            targetSeat: pendingEffect.targetSeat,
+          }), 0);
+        } else {
+          resolveTargetAction(newGame, pendingEffect.purpose, pendingEffect.targetSeat);
+        }
+      } else if (pendingEffect.kind === 'doctorate') {
+        const me = newGame.players[newGame.currentTurn];
+        const target = newGame.players[pendingChoice.targetSeat];
+        requestPayment(newGame, target.seat, me.seat, 2);
+      } else if (pendingEffect.kind === 'prorogued') {
+        resolveTargetAction(newGame, 'parliament_prorogued', pendingChoice.targetSeat);
+      }
+      return newGame;
+    });
+    if (pendingChoice.pendingEffect.kind !== 'target-action' ||
+        pendingChoice.pendingEffect.purpose !== 'coalition') {
+      setPendingChoice(null);
+    }
+  }
+
+  // When target uses a reaction card
+  function playReaction(reactionEffectKey: string) {
+    if (pendingChoice?.type !== 'reaction') return;
+    const { actingCardId, targetSeat, actingPlayerSeat } = pendingChoice;
+
+    setGame(g => {
+      const newGame = cloneGame(g);
+      const target = newGame.players[targetSeat];
+      const acting = newGame.players[actingPlayerSeat];
+
+      // Find and remove the reaction card from target's hand
+      const reactionCardId = target.hand.find(id => getCardById(id).effectKey === reactionEffectKey);
+      if (!reactionCardId) return newGame;
+      target.hand = target.hand.filter(id => id !== reactionCardId);
+
+      // Send reaction card to common discard
+      newGame.commonDiscard.push(reactionCardId);
+
+      // Also send the acting card to discard (it was played but cancelled)
+      // The acting card was already added to commonDiscard in playAsAction,
+      // so no need to add again.
+
+      const reactingCard = getCardById(reactionCardId);
+      const actingCard = getCardById(actingCardId);
+      newGame.log.push(`🛡 ${target.name} played ${reactingCard.name} — cancelled ${acting.name}!`);
+      return newGame;
+    });
+    setPendingChoice(null);
+  }
+
+  // Coalition pick steps (unchanged)
+  function coalitionChooseMine(myCardId: string) {
+    if (pendingChoice?.type !== 'coalition-mine') return;
+    setPendingChoice({
+      type: 'coalition-theirs',
+      cardId: pendingChoice.cardId,
+      targetSeat: pendingChoice.targetSeat,
+      myCardId,
+    });
+  }
+
+  function coalitionChooseTheirs(theirCardId: string) {
+    if (pendingChoice?.type !== 'coalition-theirs') return;
+    const { targetSeat, myCardId } = pendingChoice;
     setGame(g => {
       const newGame = cloneGame(g);
       const me = newGame.players[g.currentTurn];
       const target = newGame.players[targetSeat];
-
-      switch (purpose) {
-        case 'strike': {
-          const amt = Math.min(2, getPayableValue(target));
-          if (amt > 0) {
-            const exact = findExactMatch(target, amt);
-            if (exact) {
-              removePaidCards(target, exact);
-              newGame.centralBank.push(...exact);
-              newGame.log.push(`${target.name} paid ${amt} BN to Central Bank (auto).`);
-            } else {
-              setTimeout(() => setPendingChoice({
-                type: 'payment', payer: targetSeat, payee: 'bank', amount: amt,
-              }), 0);
-            }
-          }
-          break;
-        }
-        case 'mahanayake': {
-          const amt = Math.min(4, getPayableValue(target));
-          if (amt > 0) {
-            const exact = findExactMatch(target, amt);
-            if (exact) {
-              removePaidCards(target, exact);
-              newGame.centralBank.push(...exact);
-              newGame.log.push(`${target.name} paid ${amt} BN to Central Bank (auto).`);
-            } else {
-              setTimeout(() => setPendingChoice({
-                type: 'payment', payer: targetSeat, payee: 'bank', amount: amt,
-              }), 0);
-            }
-          }
-          break;
-        }
-        case 'bribe': {
-          if (me.rank === 2) {
-            // Take 5 from all others
-            for (const other of newGame.players) {
-              if (other.seat === me.seat) continue;
-              const amt = Math.min(5, getPayableValue(other));
-              if (amt === 0) {
-                newGame.log.push(`${other.name} has nothing to pay.`);
-                continue;
-              }
-              const exact = findExactMatch(other, amt);
-              if (exact) {
-                removePaidCards(other, exact);
-                me.campaignFund.push(...exact);
-                newGame.log.push(`${other.name} paid ${amt} BN (auto).`);
-              } else {
-                setTimeout(() => setPendingChoice({
-                  type: 'payment', payer: other.seat, payee: me.seat, amount: amt,
-                }), 0);
-              }
-            }
-          } else {
-            const amount = me.rank === 0 ? 2 : 3;
-            const amt = Math.min(amount, getPayableValue(target));
-            if (amt === 0) {
-              newGame.log.push(`${target.name} has nothing to pay.`);
-            } else {
-              const exact = findExactMatch(target, amt);
-              if (exact) {
-                removePaidCards(target, exact);
-                me.campaignFund.push(...exact);
-                newGame.log.push(`${target.name} paid ${amt} BN to ${me.name} (auto).`);
-              } else {
-                setTimeout(() => setPendingChoice({
-                  type: 'payment', payer: targetSeat, payee: me.seat, amount: amt,
-                }), 0);
-              }
-            }
-          }
-          break;
-        }
-        case 'no_confidence': {
-          // Steal 1 loose power card (not from completed set)
-          if (target.powerCards.length === 0) {
-            newGame.log.push(`${target.name} has no loose Power Cards to steal.`);
-          } else {
-            const stolen = target.powerCards[0];
-            target.powerCards = target.powerCards.filter(id => id !== stolen);
-            // Stolen card goes to my Power area (not hand)
-            me.powerCards.push(stolen);
-            newGame.log.push(`${me.name} stole ${getCardById(stolen).name} from ${target.name}.`);
-            checkWinAndSets(newGame, me.seat);
-          }
-          break;
-        }
-        case 'reshuffle': {
-          // Steal 1 complete set from target (can't target 3-set holder)
-          if (target.completedSets.length === 0) {
-            newGame.log.push(`${target.name} has no complete sets to steal.`);
-          } else if (target.completedSets.length >= 3) {
-            newGame.log.push(`${target.name} already has 3 sets — cannot target.`);
-          } else {
-            const stolenSet = target.completedSets[0];
-            target.completedSets = target.completedSets.slice(1);
-            recalcRank(target);
-            // Add to my power area (not directly a completed set)
-            me.powerCards.push(...stolenSet);
-            newGame.log.push(`${me.name} stole a complete set from ${target.name}.`);
-            checkWinAndSets(newGame, me.seat);
-          }
-          break;
-        }
-        case 'coup': {
-          // Steal all complete sets (can't target 3-set holder)
-          if (target.completedSets.length >= 3) {
-            newGame.log.push(`${target.name} already has 3 sets — cannot target.`);
-          } else if (target.completedSets.length === 0) {
-            newGame.log.push(`${target.name} has no complete sets to steal.`);
-          } else {
-            const stolen = target.completedSets.flat();
-            target.completedSets = [];
-            recalcRank(target);
-            me.powerCards.push(...stolen);
-            newGame.log.push(`${me.name} CoupLK'd ${target.name} — stole all sets!`);
-            checkWinAndSets(newGame, me.seat);
-          }
-          break;
-        }
-        case 'double_crossover': {
-          // Steal all Crossovers from every player (loose + sets)
-          for (const other of newGame.players) {
-            if (other.seat === me.seat) continue;
-            const stolenLoose: string[] = [];
-            const stolenSets: string[] = [];
-            other.powerCards = other.powerCards.filter(id => {
-              if (getCardById(id).setKey === 'crossovers') { stolenLoose.push(id); return false; }
-              return true;
-            });
-            other.completedSets = other.completedSets.filter(set => {
-              const isCrossSet = set.length > 0 && getCardById(set[0]).setKey === 'crossovers';
-              if (isCrossSet) { stolenSets.push(...set); return false; }
-              return true;
-            });
-            recalcRank(other);
-            me.powerCards.push(...stolenLoose, ...stolenSets);
-            if (stolenLoose.length + stolenSets.length > 0) {
-              newGame.log.push(`${me.name} stole ${stolenLoose.length + stolenSets.length} Crossovers from ${other.name}.`);
-            }
-          }
-          checkWinAndSets(newGame, me.seat);
-          break;
-        }
-        case 'fcid':
-        case 'white_van':
-        case 'injunction': {
-          target.skipTurns += 1;
-          newGame.log.push(`${target.name} will miss their next turn (${target.skipTurns} pending).`);
-          break;
-        }
-        case 'abolished': {
-          // Steal a complete set, put cards at bottom of draw pile
-          // Can target 3-set holder (only card that can)
-          if (target.completedSets.length === 0) {
-            newGame.log.push(`${target.name} has no complete sets.`);
-          } else {
-            const stolen = target.completedSets[0];
-            target.completedSets = target.completedSets.slice(1);
-            recalcRank(target);
-            newGame.drawPile = [...stolen, ...newGame.drawPile];
-            newGame.log.push(`${me.name} played Executive Presidency Abolished — ${target.name}'s set went to bottom of deck.`);
-          }
-          break;
-        }
-        case 'coalition': {
-          if (me.powerCards.length === 0 || target.powerCards.length === 0) {
-            newGame.log.push(`Coalition — no loose power cards to swap.`);
-          } else {
-            const mine = me.powerCards[0];
-            const theirs = target.powerCards[0];
-            me.powerCards = me.powerCards.filter(id => id !== mine);
-            target.powerCards = target.powerCards.filter(id => id !== theirs);
-            me.powerCards.push(theirs);
-            target.powerCards.push(mine);
-            newGame.log.push(`${me.name} swapped ${getCardById(mine).name} ↔ ${getCardById(theirs).name}.`);
-            checkWinAndSets(newGame, me.seat);
-            checkWinAndSets(newGame, target.seat);
-          }
-          break;
-        }
-      }
+      me.powerCards = me.powerCards.filter(id => id !== myCardId);
+      target.powerCards = target.powerCards.filter(id => id !== theirCardId);
+      me.powerCards.push(theirCardId);
+      target.powerCards.push(myCardId);
+      newGame.log.push(`${me.name} swapped ${getCardById(myCardId).name} ↔ ${getCardById(theirCardId).name} with ${target.name}.`);
+      checkWinAndSets(newGame, me.seat);
+      checkWinAndSets(newGame, target.seat);
       return newGame;
     });
     setPendingChoice(null);
@@ -723,6 +796,11 @@ function App() {
 
   const wildTargets = pendingChoice?.type === 'wild-choice'
     ? findWildTargets(currentPlayer)
+    : [];
+
+  // Reactions available for the current pending reaction choice
+  const reactionOptions = pendingChoice?.type === 'reaction'
+    ? getAvailableReactions(game.players[pendingChoice.targetSeat], pendingChoice.purpose)
     : [];
 
   return (
@@ -807,9 +885,35 @@ function App() {
       )}
 
       {pendingChoice?.type === 'wild-choice' && (
-        <WildChoiceModal
-          targets={wildTargets}
-          onChoose={resolveWildChoice}
+        <WildChoiceModal targets={wildTargets} onChoose={resolveWildChoice} />
+      )}
+
+      {pendingChoice?.type === 'coalition-mine' && (
+        <CoalitionPickCardModal
+          cards={currentPlayer.powerCards}
+          title="Coalition — Pick YOUR Card to Give"
+          onPick={coalitionChooseMine}
+          onCancel={() => setPendingChoice(null)}
+        />
+      )}
+
+      {pendingChoice?.type === 'coalition-theirs' && (
+        <CoalitionPickCardModal
+          cards={game.players[pendingChoice.targetSeat].powerCards}
+          title={`Coalition — Pick ${game.players[pendingChoice.targetSeat].name}'s Card to Take`}
+          onPick={coalitionChooseTheirs}
+          onCancel={() => setPendingChoice(null)}
+        />
+      )}
+
+      {pendingChoice?.type === 'reaction' && (
+        <ReactionModal
+          actingPlayer={game.players[pendingChoice.actingPlayerSeat]}
+          targetPlayer={game.players[pendingChoice.targetSeat]}
+          actingCardName={getCardById(pendingChoice.actingCardId).name}
+          availableReactions={reactionOptions}
+          onReact={playReaction}
+          onAccept={acceptReaction}
         />
       )}
     </div>
@@ -817,9 +921,7 @@ function App() {
 }
 
 // ============ PLAYER AREA ============
-function PlayerArea({
-  player, isOpponent, onCardClick, selectedCard, setSelectedCard, canPlay,
-}: {
+function PlayerArea({ player, isOpponent, onCardClick, selectedCard, setSelectedCard, canPlay }: {
   player: Player;
   isOpponent: boolean;
   onCardClick?: (id: string) => void;
@@ -969,13 +1071,13 @@ const PURPOSE_PROMPTS: Record<string, string> = {
   coalition: 'Choose a player to swap one loose Power Card with.',
   bribe: 'Choose a player to steal money from.',
   no_confidence: 'Choose a player to steal a loose Power Card from.',
-  reshuffle: 'Choose a player to steal a complete set from (not 3-set holders).',
-  coup: 'Choose a player to steal ALL complete sets from (not 3-set holders).',
+  reshuffle: 'Choose a player to steal a complete set from.',
+  coup: 'Choose a player to steal ALL complete sets from.',
   double_crossover: 'Choose a player to steal all Crossovers from.',
   fcid: 'Choose a player to skip their next turn.',
   white_van: 'Choose a player to skip their next turn.',
   injunction: 'Choose a player to skip their next turn.',
-  abolished: 'Choose a player to break their set (only card that can target a President).',
+  abolished: 'Choose a player to break their set.',
 };
 
 function TargetModal({ game, purpose, onSelect, onCancel }: {
@@ -1009,7 +1111,7 @@ function PaymentModal({ payer, amount, onConfirm }: {
   const payable = getPayableCards(payer);
   const totalAvailable = payable.reduce((s, id) => s + getCardById(id).bankValue, 0);
   const mustPayAll = totalAvailable <= amount;
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(mustPayAll ? payable : []);
   const total = selected.reduce((s, id) => s + getCardById(id).bankValue, 0);
   const enough = total >= amount || mustPayAll;
 
@@ -1028,6 +1130,7 @@ function PaymentModal({ payer, amount, onConfirm }: {
     }
     setSelected(picked);
   }
+
   return (
     <div className="modal-overlay">
       <div className="modal modal-wide">
@@ -1092,6 +1195,88 @@ function WildChoiceModal({ targets, onChoose }: {
         <button className="btn-cancel" onClick={() => onChoose('loose')}>
           Keep Loose
         </button>
+      </div>
+    </div>
+  );
+}
+
+function CoalitionPickCardModal({ cards, title, onPick, onCancel }: {
+  cards: string[];
+  title: string;
+  onPick: (cardId: string) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="modal-overlay">
+      <div className="modal modal-wide">
+        <h2>{title}</h2>
+        {cards.length === 0 ? (
+          <>
+            <p className="modal-subtitle">No loose Power Cards available to swap.</p>
+            <button className="btn-cancel" onClick={onCancel}>Cancel</button>
+          </>
+        ) : (
+          <>
+            <p className="modal-subtitle">Click a card to select it.</p>
+            <div className="trim-cards">
+              {cards.map(id => {
+                const card = getCardById(id);
+                return (
+                  <div key={id} className="mini-card"
+                    style={{ background: '#c9a227' }} onClick={() => onPick(id)}>
+                    <div className="card-type">{card.type}</div>
+                    <div className="card-name">{card.name}</div>
+                    <div className="card-value">{card.bankValue} BN</div>
+                  </div>
+                );
+              })}
+            </div>
+            <button className="btn-cancel" onClick={onCancel}>Cancel</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============ REACTION MODAL ============
+function ReactionModal({
+  actingPlayer, targetPlayer, actingCardName, availableReactions, onReact, onAccept,
+}: {
+  actingPlayer: Player;
+  targetPlayer: Player;
+  actingCardName: string;
+  availableReactions: string[];
+  onReact: (effectKey: string) => void;
+  onAccept: () => void;
+}) {
+  const REACT_LABELS: Record<string, string> = {
+    mathaka: '🧠 Mathaka Na',
+    father: '👨 Do You Know My Father',
+    protest: '📢 Public Protest',
+  };
+  const REACT_SUBS: Record<string, string> = {
+    mathaka: 'Cancels miss-turn cards only',
+    father: 'Cancels any Action Card',
+    protest: 'Cancels any Action Card',
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal">
+        <h2>⚠️ {actingPlayer.name} played {actingCardName}</h2>
+        <p className="modal-subtitle">
+          {targetPlayer.name}, do you want to react? ({availableReactions.length} option{availableReactions.length > 1 ? 's' : ''} available)
+        </p>
+        <div className="modal-buttons">
+          {availableReactions.map(key => (
+            <button key={key} className="btn-action" onClick={() => onReact(key)}>
+              {REACT_LABELS[key]}
+              <span className="btn-sub">{REACT_SUBS[key]}</span>
+            </button>
+          ))}
+        </div>
+        <button className="btn-cancel" onClick={onAccept}>Accept (let it happen)</button>
       </div>
     </div>
   );
