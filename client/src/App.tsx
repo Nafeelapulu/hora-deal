@@ -1097,24 +1097,62 @@ function MiniCard({ cardId, small, hidden, selected, onClick, wildClickable }: {
   wildClickable?: boolean;
 }) {
   const card = getCardById(cardId);
-  const colors: Record<string, string> = { MONEY: '#2d8f4e', POWER: '#c9a227', ACTION: '#c73650' };
+
+  // Convert card id (e.g., "money_1_0") to image filename (e.g., "money_1")
+  const baseKey = cardId.replace(/_\d+$/, '');
+  const imagePath = `/cards/${baseKey}.png`;
+
   if (hidden) {
     return (
-      <div className={`card-back ${small ? 'small' : ''}`} onClick={onClick}>
-        <div className="card-back-logo">හෝරා<br />DEAL</div>
+      <div
+        className={`card-back ${small ? 'small' : ''} ${selected ? 'selected' : ''}`}
+        onClick={onClick}
+      >
+        <img
+          src="/cards/card_back.png"
+          alt="Card back"
+          className="card-img"
+          onError={e => {
+            // Fallback if image missing
+            (e.target as HTMLImageElement).style.display = 'none';
+            const parent = (e.target as HTMLImageElement).parentElement;
+            if (parent && !parent.querySelector('.fallback-text')) {
+              const fb = document.createElement('div');
+              fb.className = 'fallback-text card-back-logo';
+              fb.innerHTML = 'හොර<br />DEAL';
+              parent.appendChild(fb);
+            }
+          }}
+        />
       </div>
     );
   }
+
   return (
     <div
       className={`mini-card ${small ? 'small' : ''} ${selected ? 'selected' : ''} ${wildClickable ? 'wild-clickable' : ''}`}
-      style={{ background: colors[card.type] }}
       onClick={onClick}
       title={wildClickable ? `${card.name} — click to move` : card.name}
     >
-      <div className="card-type">{card.type}</div>
-      <div className="card-name">{card.name}</div>
-      <div className="card-value">{card.bankValue} BN</div>
+      <img
+        src={imagePath}
+        alt={card.name}
+        className="card-img"
+        onError={e => {
+          // Fallback: hide broken image, show colored rectangle with text
+          const parent = (e.target as HTMLImageElement).parentElement;
+          if (!parent) return;
+          (e.target as HTMLImageElement).style.display = 'none';
+          if (!parent.querySelector('.fallback-text')) {
+            const colors: Record<string, string> = { MONEY: '#2d8f4e', POWER: '#c9a227', ACTION: '#c73650' };
+            parent.style.background = colors[card.type];
+            const fb = document.createElement('div');
+            fb.className = 'fallback-text';
+            fb.innerHTML = `<div class="card-type">${card.type}</div><div class="card-name">${card.name}</div><div class="card-value">${card.bankValue} BN</div>`;
+            parent.appendChild(fb);
+          }
+        }}
+      />
     </div>
   );
 }
