@@ -35,6 +35,10 @@ type PendingChoice =
   | { type: 'coalition-mine'; cardId: string; targetSeat: number }
   | { type: 'coalition-theirs'; cardId: string; targetSeat: number; myCardId: string }
   | { type: 'wild-reorder'; wildId: string }
+  | { type: 'pick-power-card'; targetSeat: number }
+  | { type: 'pick-set'; targetSeat: number }
+  | { type: 'epa-window'; winningSeat: number; nextPlayerSeat: number }
+  | { type: 'epa-react'; winningSeat: number; epaPlayerSeat: number }
   | { type: 'reaction';
       actingCardId: string;
       actingPlayerSeat: number;
@@ -196,7 +200,7 @@ function checkWinAndSets(newGame: GameState, seat: number) {
     newGame.log.push(`${p.name} completed a set! Rank ${p.rank}.`);
     if (p.completedSets.length >= 3) {
       newGame.winnerSeat = p.seat;
-      newGame.log.push(`🏆 ${p.name} is PRESIDENT!`);
+      newGame.log.push(`🏆 ${p.name} reached 3 sets!`);
     }
   }
 }
@@ -216,6 +220,20 @@ function getAvailableReactions(target: Player, purpose: string): string[] {
   return options;
 }
 
+// Find next seat with EPA in hand, starting from a given seat (wrapping)
+function findNextEpaHolder(g: GameState, winningSeat: number, startFrom: number): number | null {
+  const total = g.players.length;
+  for (let offset = 0; offset < total; offset++) {
+    const seat = (startFrom + offset) % total;
+    if (seat === winningSeat) continue;
+    const player = g.players[seat];
+    if (player.hand.some(id => getCardById(id).effectKey === 'abolished')) {
+      return seat;
+    }
+  }
+  return null;
+}
+
 // ============ MAIN APP ============
 function App() {
   const [game, setGame] = useState<GameState>(() => dealCards());
@@ -225,6 +243,20 @@ function App() {
   const currentPlayer = game.players[game.currentTurn];
   const playsRemaining = MAX_PLAYS_PER_TURN - game.cardsPlayedThisTurn;
   const canPlay = playsRemaining > 0 && game.turnStarted && pendingChoice === null;
+
+  // After any win trigger, open EPA window if any other player has EPA
+  function triggerWinCheck(g: GameState, seat: number) {
+    if (g.winnerSeat === null) return;
+    const epaHolder = findNextEpaHolder(g, seat, (seat + 1) % g.players.length);
+    if (epaHolder !== null) {
+      g.winnerSeat = null; // Hold off on win
+      setTimeout(() => setPendingChoice({
+        type: 'epa-window',
+        winningSeat: seat,
+        nextPlayerSeat: epaHolder,
+      }), 0);
+    }
+  }
 
   function startTurn() {
     setGame(g => {
@@ -308,11 +340,11 @@ function App() {
         if (target.powerCards.length === 0) {
           newGame.log.push(`${target.name} has no loose Power Cards.`);
         } else {
-          const stolen = target.powerCards[0];
-          target.powerCards = target.powerCards.filter(id => id !== stolen);
-          me.powerCards.push(stolen);
-          newGame.log.push(`${me.name} stole ${getCardById(stolen).name} from ${target.name}.`);
-          checkWinAndSets(newGame, me.seat);
+          // NEW: open modal to pick the card
+          setTimeout(() => setPendingChoice({
+            type: 'pick-power-card',
+            targetSeat,
+          }), 0);
         }
         break;
       }
@@ -322,12 +354,11 @@ function App() {
         } else if (target.completedSets.length >= 3) {
           newGame.log.push(`${target.name} has 3 sets — cannot target.`);
         } else {
-          const stolenSet = target.completedSets[0];
-          target.completedSets = target.completedSets.slice(1);
-          recalcRank(target);
-          me.powerCards.push(...stolenSet);
-          newGame.log.push(`${me.name} stole a complete set from ${target.name}.`);
-          checkWinAndSets(newGame, me.seat);
+          // NEW: open modal to pick the set
+          setTimeout(() => setPendingChoice({
+            type: 'pick-set',
+            targetSeat,
+          }), 0);
         }
         break;
       }
@@ -343,10 +374,12 @@ function App() {
           me.powerCards.push(...stolen);
           newGame.log.push(`${me.name} CoupLK'd ${target.name} — stole all sets!`);
           checkWinAndSets(newGame, me.seat);
+          triggerWinCheck(newGame, me.seat);
         }
         break;
       }
       case 'double_crossover': {
+        // FIX: steal from loose power AND completed sets
         for (const other of newGame.players) {
           if (other.seat === me.seat) continue;
           const stolenLoose: string[] = [];
@@ -367,6 +400,7 @@ function App() {
           }
         }
         checkWinAndSets(newGame, me.seat);
+        triggerWinCheck(newGame, me.seat);
         break;
       }
       case 'fcid':
@@ -398,6 +432,145 @@ function App() {
         break;
       }
     }
+  }
+
+  // FIX: Handle pick-power-card (No Confidence Motion)
+  function pickPowerCard(cardId: string) {
+    if (pendingChoice?.type !== 'pick-power-card') return;
+    const targetSeat = pendingChoice.targetSeat;
+    setGame(g => {
+      const newGame = cloneGame(g);
+      const me = newGame.players[g.currentTurn];
+      const target = newGame.players[targetSeat];
+      target.powerCards = target.powerCards.filter(id => id !== cardId);
+      me.powerCards.push(cardId);
+      newGame.log.push(`${me.name} stole ${getCardById(cardId).name} from ${target.name}.`);
+      checkWinAndSets(newGame, me.seat);
+      triggerWinCheck(newGame, me.seat);
+      return newGame;
+    });
+    setPendingChoice(null);
+  }
+
+  // FIX: Handle pick-set (Cabinet Reshuffle)
+  function pickSet(setIndex: number) {
+    if (pendingChoice?.type !== 'pick-set') return;
+    const targetSeat = pendingChoice.targetSeat;
+    setGame(g => {
+      const newGame = cloneGame(g);
+      const me = newGame.players[g.currentTurn];
+      const target = newGame.players[targetSeat];
+      const stolen = target.completedSets[setIndex];
+      target.completedSets = target.completedSets.filter((_, i) => i !== setIndex);
+      recalcRank(target);
+      // FIX: goes directly to my completed sets (instant rank up)
+      me.completedSets.push([...stolen]);
+      recalcRank(me);
+      newGame.log.push(`${me.name} stole a complete set from ${target.name}. Rank ${me.rank}.`);
+      if (me.completedSets.length >= 3) {
+        newGame.winnerSeat = me.seat;
+        newGame.log.push(`🏆 ${me.name} reached 3 sets!`);
+      }
+      triggerWinCheck(newGame, me.seat);
+      return newGame;
+    });
+    setPendingChoice(null);
+  }
+
+  // FIX: EPA window — a player with EPA can play it
+  function playEpa() {
+    if (pendingChoice?.type !== 'epa-window') return;
+    const winningSeat = pendingChoice.winningSeat;
+    const epaSeat = pendingChoice.nextPlayerSeat;
+    setGame(g => {
+      const newGame = cloneGame(g);
+      const epaPlayer = newGame.players[epaSeat];
+      const epaCardId = epaPlayer.hand.find(id => getCardById(id).effectKey === 'abolished');
+      if (!epaCardId) return newGame;
+      epaPlayer.hand = epaPlayer.hand.filter(id => id !== epaCardId);
+      newGame.commonDiscard.push(epaCardId);
+      newGame.log.push(`${epaPlayer.name} played Executive Presidency Abolished!`);
+      // Winning player gets reaction chance
+      const winner = newGame.players[winningSeat];
+      const reactions = winner.hand.filter(id => {
+        const k = getCardById(id).effectKey;
+        return k === 'father' || k === 'protest';
+      });
+      if (reactions.length > 0) {
+        setTimeout(() => setPendingChoice({
+          type: 'epa-react',
+          winningSeat,
+          epaPlayerSeat: epaSeat,
+        }), 0);
+      } else {
+        // No reaction — resolve EPA
+        const winnerP = newGame.players[winningSeat];
+        const lastSet = winnerP.completedSets[winnerP.completedSets.length - 1];
+        winnerP.completedSets = winnerP.completedSets.slice(0, -1);
+        recalcRank(winnerP);
+        newGame.drawPile = [...lastSet, ...newGame.drawPile];
+        newGame.log.push(`${winnerP.name}'s last set went to bottom of deck. Back to ${winnerP.rank} sets.`);
+      }
+      return newGame;
+    });
+    setPendingChoice(null);
+  }
+
+  function skipEpa() {
+    if (pendingChoice?.type !== 'epa-window') return;
+    const { winningSeat, nextPlayerSeat } = pendingChoice;
+    setGame(g => {
+      const newGame = cloneGame(g);
+      // Check if any other player after this one has EPA
+      const nextEpa = findNextEpaHolder(newGame, winningSeat, (nextPlayerSeat + 1) % newGame.players.length);
+      if (nextEpa !== null && nextEpa !== nextPlayerSeat) {
+        setTimeout(() => setPendingChoice({
+          type: 'epa-window',
+          winningSeat,
+          nextPlayerSeat: nextEpa,
+        }), 0);
+      } else {
+        newGame.winnerSeat = winningSeat;
+        newGame.log.push(`🏆 ${newGame.players[winningSeat].name} is PRESIDENT!`);
+      }
+      return newGame;
+    });
+    setPendingChoice(null);
+  }
+
+  // FIX: EPA reaction — winning player counters
+  function epaReact(effectKey: 'father' | 'protest') {
+    if (pendingChoice?.type !== 'epa-react') return;
+    const { winningSeat } = pendingChoice;
+    setGame(g => {
+      const newGame = cloneGame(g);
+      const winner = newGame.players[winningSeat];
+      const reactionCardId = winner.hand.find(id => getCardById(id).effectKey === effectKey);
+      if (!reactionCardId) return newGame;
+      winner.hand = winner.hand.filter(id => id !== reactionCardId);
+      newGame.commonDiscard.push(reactionCardId);
+      newGame.log.push(`🛡 ${winner.name} played ${getCardById(reactionCardId).name} — cancelled E.P.A.!`);
+      newGame.winnerSeat = winningSeat;
+      newGame.log.push(`🏆 ${winner.name} is PRESIDENT!`);
+      return newGame;
+    });
+    setPendingChoice(null);
+  }
+
+  function epaAccept() {
+    if (pendingChoice?.type !== 'epa-react') return;
+    const { winningSeat } = pendingChoice;
+    setGame(g => {
+      const newGame = cloneGame(g);
+      const winner = newGame.players[winningSeat];
+      const lastSet = winner.completedSets[winner.completedSets.length - 1];
+      winner.completedSets = winner.completedSets.slice(0, -1);
+      recalcRank(winner);
+      newGame.drawPile = [...lastSet, ...newGame.drawPile];
+      newGame.log.push(`${winner.name}'s last set went to bottom of deck. Back to ${winner.rank} sets.`);
+      return newGame;
+    });
+    setPendingChoice(null);
   }
 
   function playAsAction(cardId: string) {
@@ -519,6 +692,7 @@ function App() {
       }
 
       checkWinAndSets(newGame, newGame.currentTurn);
+      triggerWinCheck(newGame, newGame.currentTurn);
       return newGame;
     });
     setSelectedCard(null);
@@ -540,7 +714,6 @@ function App() {
       const newGame = cloneGame(g);
       const p = newGame.players[newGame.currentTurn];
 
-      // Find where the wild currently is
       let setIdx = -1;
       for (let i = 0; i < p.completedSets.length; i++) {
         if (p.completedSets[i].includes(wildId)) { setIdx = i; break; }
@@ -552,7 +725,6 @@ function App() {
       const wildCard = getCardById(wildId);
       if (!wildCard.isWild) return newGame;
 
-      // 1. Remove wild from current location
       let brokeSet: string[] = [];
       if (wasInSet) {
         const oldSet = p.completedSets[setIdx];
@@ -565,7 +737,6 @@ function App() {
         p.powerCards = p.powerCards.filter(id => id !== wildId);
       }
 
-      // 2. Handle destination
       if (destinationSetKey === 'loose') {
         p.powerCards.push(wildId);
         newGame.log.push(`${p.name} moved Common Candidate to loose Power.`);
@@ -591,7 +762,7 @@ function App() {
           newGame.log.push(`${p.name} completed a set with Common Candidate! Rank ${p.rank}.`);
           if (p.completedSets.length >= 3) {
             newGame.winnerSeat = p.seat;
-            newGame.log.push(`🏆 ${p.name} is PRESIDENT!`);
+            newGame.log.push(`🏆 ${p.name} reached 3 sets!`);
           }
         } else {
           p.powerCards.push(wildId);
@@ -601,6 +772,7 @@ function App() {
       }
 
       newGame.cardsPlayedThisTurn++;
+      triggerWinCheck(newGame, p.seat);
       return newGame;
     });
 
@@ -633,12 +805,13 @@ function App() {
         newGame.log.push(`${p.name} completed a set with Common Candidate! Rank ${p.rank}.`);
         if (p.completedSets.length >= 3) {
           newGame.winnerSeat = p.seat;
-          newGame.log.push(`🏆 ${p.name} is PRESIDENT!`);
+          newGame.log.push(`🏆 ${p.name} reached 3 sets!`);
         }
       } else {
         p.powerCards.push(wildId);
         newGame.log.push(`${p.name} added Common Candidate to ${sample.name} (${combined.length}/${setSize}).`);
       }
+      triggerWinCheck(newGame, p.seat);
       return newGame;
     });
     setPendingChoice(null);
@@ -735,8 +908,6 @@ function App() {
     setGame(g => {
       const newGame = cloneGame(g);
       const target = newGame.players[targetSeat];
-      const acting = newGame.players[actingPlayerSeat];
-
       const reactionCardId = target.hand.find(id => getCardById(id).effectKey === reactionEffectKey);
       if (!reactionCardId) return newGame;
       target.hand = target.hand.filter(id => id !== reactionCardId);
@@ -744,7 +915,7 @@ function App() {
 
       const reactingCard = getCardById(reactionCardId);
       const actingCard = getCardById(actingCardId);
-      newGame.log.push(`🛡 ${target.name} played ${reactingCard.name} — cancelled ${acting.name}!`);
+      newGame.log.push(`🛡 ${target.name} played ${reactingCard.name} — cancelled ${actingCard.name}!`);
       return newGame;
     });
     setPendingChoice(null);
@@ -774,6 +945,8 @@ function App() {
       newGame.log.push(`${me.name} swapped ${getCardById(myCardId).name} ↔ ${getCardById(theirCardId).name} with ${target.name}.`);
       checkWinAndSets(newGame, me.seat);
       checkWinAndSets(newGame, target.seat);
+      triggerWinCheck(newGame, me.seat);
+      triggerWinCheck(newGame, target.seat);
       return newGame;
     });
     setPendingChoice(null);
@@ -807,8 +980,9 @@ function App() {
           newGame.log.push(`${receiver.name} completed a set from payment! Rank ${receiver.rank}.`);
           if (receiver.completedSets.length >= 3) {
             newGame.winnerSeat = receiver.seat;
-            newGame.log.push(`🏆 ${receiver.name} is PRESIDENT!`);
+            newGame.log.push(`🏆 ${receiver.name} reached 3 sets!`);
           }
+          triggerWinCheck(newGame, receiver.seat);
         }
         newGame.log.push(`${payerP.name} paid ${value} BN to ${receiver.name}.`);
       }
@@ -987,6 +1161,41 @@ function App() {
         />
       )}
 
+      {pendingChoice?.type === 'pick-power-card' && (
+        <PickPowerCardModal
+          target={game.players[pendingChoice.targetSeat]}
+          onPick={pickPowerCard}
+          onCancel={() => setPendingChoice(null)}
+        />
+      )}
+
+      {pendingChoice?.type === 'pick-set' && (
+        <PickSetModal
+          target={game.players[pendingChoice.targetSeat]}
+          onPick={pickSet}
+          onCancel={() => setPendingChoice(null)}
+        />
+      )}
+
+      {pendingChoice?.type === 'epa-window' && (
+        <EpaWindowModal
+          epaPlayer={game.players[pendingChoice.nextPlayerSeat]}
+          winningPlayer={game.players[pendingChoice.winningSeat]}
+          onPlay={playEpa}
+          onSkip={skipEpa}
+        />
+      )}
+
+      {pendingChoice?.type === 'epa-react' && (
+        <EpaReactModal
+          winningPlayer={game.players[pendingChoice.winningSeat]}
+          epaPlayer={game.players[pendingChoice.epaPlayerSeat]}
+          winningHand={game.players[pendingChoice.winningSeat].hand}
+          onReact={epaReact}
+          onAccept={epaAccept}
+        />
+      )}
+
       {pendingChoice?.type === 'reaction' && (
         <ReactionModal
           actingPlayer={game.players[pendingChoice.actingPlayerSeat]}
@@ -1097,33 +1306,13 @@ function MiniCard({ cardId, small, hidden, selected, onClick, wildClickable }: {
   wildClickable?: boolean;
 }) {
   const card = getCardById(cardId);
-
-  // Convert card id (e.g., "money_1_0") to image filename (e.g., "money_1")
   const baseKey = cardId.replace(/_\d+$/, '');
   const imagePath = `/cards/${baseKey}.png`;
 
   if (hidden) {
     return (
-      <div
-        className={`card-back ${small ? 'small' : ''} ${selected ? 'selected' : ''}`}
-        onClick={onClick}
-      >
-        <img
-          src="/cards/card_back.png"
-          alt="Card back"
-          className="card-img"
-          onError={e => {
-            // Fallback if image missing
-            (e.target as HTMLImageElement).style.display = 'none';
-            const parent = (e.target as HTMLImageElement).parentElement;
-            if (parent && !parent.querySelector('.fallback-text')) {
-              const fb = document.createElement('div');
-              fb.className = 'fallback-text card-back-logo';
-              fb.innerHTML = 'හොර<br />DEAL';
-              parent.appendChild(fb);
-            }
-          }}
-        />
+      <div className={`card-back ${small ? 'small' : ''}`} onClick={onClick}>
+        <img src="/cards/card_back.png" alt="Card back" className="card-img" />
       </div>
     );
   }
@@ -1134,25 +1323,7 @@ function MiniCard({ cardId, small, hidden, selected, onClick, wildClickable }: {
       onClick={onClick}
       title={wildClickable ? `${card.name} — click to move` : card.name}
     >
-      <img
-        src={imagePath}
-        alt={card.name}
-        className="card-img"
-        onError={e => {
-          // Fallback: hide broken image, show colored rectangle with text
-          const parent = (e.target as HTMLImageElement).parentElement;
-          if (!parent) return;
-          (e.target as HTMLImageElement).style.display = 'none';
-          if (!parent.querySelector('.fallback-text')) {
-            const colors: Record<string, string> = { MONEY: '#2d8f4e', POWER: '#c9a227', ACTION: '#c73650' };
-            parent.style.background = colors[card.type];
-            const fb = document.createElement('div');
-            fb.className = 'fallback-text';
-            fb.innerHTML = `<div class="card-type">${card.type}</div><div class="card-name">${card.name}</div><div class="card-value">${card.bankValue} BN</div>`;
-            parent.appendChild(fb);
-          }
-        }}
-      />
+      <img src={imagePath} alt={card.name} className="card-img" />
     </div>
   );
 }
@@ -1196,16 +1367,12 @@ function HandTrimModal({ hand, onSubmit }: {
         <p className="modal-subtitle">Hand: {hand.length}. Discard {hand.length - 7}. Keeping {keep.length}/7.</p>
         <div className="trim-cards">
           {hand.map(id => {
-            const card = getCardById(id);
-            const colors: Record<string, string> = { MONEY: '#2d8f4e', POWER: '#c9a227', ACTION: '#c73650' };
             const isKept = keep.includes(id);
             return (
               <div key={id} className={`mini-card ${isKept ? 'selected' : ''}`}
-                style={{ background: colors[card.type], opacity: isKept ? 1 : 0.4 }}
+                style={{ opacity: isKept ? 1 : 0.4 }}
                 onClick={() => toggle(id)}>
-                <div className="card-type">{card.type}</div>
-                <div className="card-name">{card.name}</div>
-                <div className="card-value">{card.bankValue} BN</div>
+                <MiniCard cardId={id} />
               </div>
             );
           })}
@@ -1223,7 +1390,7 @@ const PURPOSE_PROMPTS: Record<string, string> = {
   mahanayake: 'Choose a player to pay 4 BN to the Central Bank.',
   coalition: 'Choose a player to swap one loose Power Card with.',
   bribe: 'Choose a player to steal money from.',
-  no_confidence: 'Choose a player to steal a loose Power Card from.',
+  no_confidence: 'Choose a player to steal a Power Card from.',
   reshuffle: 'Choose a player to steal a complete set from.',
   coup: 'Choose a player to steal ALL complete sets from.',
   double_crossover: 'Choose a player to steal all Crossovers from.',
@@ -1295,22 +1462,12 @@ function PaymentModal({ payer, amount, onConfirm }: {
         </p>
         <div className="trim-cards">
           {payable.map(id => {
-            const card = getCardById(id);
-            const colors: Record<string, string> = { MONEY: '#2d8f4e', POWER: '#c9a227', ACTION: '#c73650' };
-            const isSelected = selected.includes(id);
             const inSet = payer.completedSets.some(set => set.includes(id));
             return (
-              <div key={id} className={`mini-card ${isSelected ? 'selected' : ''}`}
-                style={{
-                  background: colors[card.type],
-                  opacity: isSelected ? 1 : 0.7,
-                  border: inSet ? '3px solid #c9a227' : undefined,
-                }}
-                onClick={() => toggle(id)}
-                title={inSet ? `${card.name} (in a completed set)` : card.name}>
-                <div className="card-type">{card.type}</div>
-                <div className="card-name">{card.name}</div>
-                <div className="card-value">{card.bankValue} BN</div>
+              <div key={id} className={`mini-card ${selected.includes(id) ? 'selected' : ''}`}
+                style={{ opacity: selected.includes(id) ? 1 : 0.7, border: inSet ? '3px solid #c9a227' : undefined }}
+                onClick={() => toggle(id)}>
+                <MiniCard cardId={id} />
               </div>
             );
           })}
@@ -1334,9 +1491,7 @@ function WildChoiceModal({ targets, onChoose }: {
     <div className="modal-overlay">
       <div className="modal">
         <h2>Common Candidate — Choose a Set</h2>
-        <p className="modal-subtitle">
-          Wild joins an incomplete set. Each set can hold max 1 wild (2 for Relations in Power).
-        </p>
+        <p className="modal-subtitle">Wild joins an incomplete set.</p>
         <div className="modal-buttons">
           {targets.length === 0 && (
             <p style={{ color: '#aaa' }}>No incomplete sets — Common Candidate stays loose.</p>
@@ -1351,19 +1506,14 @@ function WildChoiceModal({ targets, onChoose }: {
             );
           })}
         </div>
-        <button className="btn-cancel" onClick={() => onChoose('loose')}>
-          Keep Loose
-        </button>
+        <button className="btn-cancel" onClick={() => onChoose('loose')}>Keep Loose</button>
       </div>
     </div>
   );
 }
 
 function CoalitionPickCardModal({ cards, title, onPick, onCancel }: {
-  cards: string[];
-  title: string;
-  onPick: (cardId: string) => void;
-  onCancel: () => void;
+  cards: string[]; title: string; onPick: (cardId: string) => void; onCancel: () => void;
 }) {
   return (
     <div className="modal-overlay">
@@ -1378,17 +1528,11 @@ function CoalitionPickCardModal({ cards, title, onPick, onCancel }: {
           <>
             <p className="modal-subtitle">Click a card to select it.</p>
             <div className="trim-cards">
-              {cards.map(id => {
-                const card = getCardById(id);
-                return (
-                  <div key={id} className="mini-card"
-                    style={{ background: '#c9a227' }} onClick={() => onPick(id)}>
-                    <div className="card-type">{card.type}</div>
-                    <div className="card-name">{card.name}</div>
-                    <div className="card-value">{card.bankValue} BN</div>
-                  </div>
-                );
-              })}
+              {cards.map(id => (
+                <div key={id} className="mini-card" onClick={() => onPick(id)}>
+                  <MiniCard cardId={id} />
+                </div>
+              ))}
             </div>
             <button className="btn-cancel" onClick={onCancel}>Cancel</button>
           </>
@@ -1398,7 +1542,6 @@ function CoalitionPickCardModal({ cards, title, onPick, onCancel }: {
   );
 }
 
-// ============ WILD REORDER MODAL ============
 function WildReorderModal({ player, wildId, onChoose, onCancel }: {
   player: Player;
   wildId: string;
@@ -1416,9 +1559,7 @@ function WildReorderModal({ player, wildId, onChoose, onCancel }: {
   for (const [key, cards] of Object.entries(groups)) {
     const sample = getCardById(cards[0]);
     const setSize = sample.setSize!;
-    const realCount = cards.length;
-    const needed = setSize - realCount;
-    if (needed > 0 && realCount >= 1) {
+    if (cards.length < setSize) {
       destinations.push({ setKey: key, setSize, existing: cards });
     }
   }
@@ -1427,9 +1568,7 @@ function WildReorderModal({ player, wildId, onChoose, onCancel }: {
     <div className="modal-overlay">
       <div className="modal modal-wide">
         <h2>Move Common Candidate</h2>
-        <p className="modal-subtitle">
-          Choose a destination. Costs 1 play. Pulling from a completed set will break it.
-        </p>
+        <p className="modal-subtitle">Choose a destination. Costs 1 play.</p>
         <div className="modal-buttons">
           {destinations.map(t => {
             const sample = getCardById(t.existing[0]);
@@ -1442,10 +1581,127 @@ function WildReorderModal({ player, wildId, onChoose, onCancel }: {
           })}
           <button className="btn-fund" onClick={() => onChoose('loose')}>
             🃏 Keep as Loose
-            <span className="btn-sub">No set assignment</span>
           </button>
         </div>
         <button className="btn-cancel" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// ============ NEW MODALS ============
+function PickPowerCardModal({ target, onPick, onCancel }: {
+  target: Player; onPick: (cardId: string) => void; onCancel: () => void;
+}) {
+  return (
+    <div className="modal-overlay">
+      <div className="modal modal-wide">
+        <h2>No Confidence Motion</h2>
+        <p className="modal-subtitle">Choose which Power Card to steal from {target.name}.</p>
+        {target.powerCards.length === 0 ? (
+          <>
+            <p style={{ color: '#aaa' }}>No loose Power Cards to steal.</p>
+            <button className="btn-cancel" onClick={onCancel}>Cancel</button>
+          </>
+        ) : (
+          <>
+            <div className="trim-cards">
+              {target.powerCards.map(id => (
+                <div key={id} className="mini-card" onClick={() => onPick(id)}>
+                  <MiniCard cardId={id} />
+                </div>
+              ))}
+            </div>
+            <button className="btn-cancel" onClick={onCancel}>Cancel</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PickSetModal({ target, onPick, onCancel }: {
+  target: Player; onPick: (setIndex: number) => void; onCancel: () => void;
+}) {
+  return (
+    <div className="modal-overlay">
+      <div className="modal modal-wide">
+        <h2>Cabinet Reshuffle</h2>
+        <p className="modal-subtitle">Choose which complete set to steal from {target.name}.</p>
+        {target.completedSets.length === 0 ? (
+          <>
+            <p style={{ color: '#aaa' }}>No complete sets to steal.</p>
+            <button className="btn-cancel" onClick={onCancel}>Cancel</button>
+          </>
+        ) : (
+          <>
+            <div className="trim-cards">
+              {target.completedSets.map((set, i) => (
+                <div key={i} className="completed-set" style={{ cursor: 'pointer' }} onClick={() => onPick(i)}>
+                  {set.map(id => <MiniCard key={id} cardId={id} />)}
+                </div>
+              ))}
+            </div>
+            <button className="btn-cancel" onClick={onCancel}>Cancel</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EpaWindowModal({ epaPlayer, winningPlayer, onPlay, onSkip }: {
+  epaPlayer: Player; winningPlayer: Player; onPlay: () => void; onSkip: () => void;
+}) {
+  return (
+    <div className="modal-overlay">
+      <div className="modal">
+        <h2>⚠️ {winningPlayer.name} is about to win!</h2>
+        <p className="modal-subtitle">
+          {epaPlayer.name}, you hold Executive Presidency Abolished.
+          Play it to destroy their last set?
+        </p>
+        <div className="modal-buttons">
+          <button className="btn-action" onClick={onPlay}>
+            ⚡ Play Executive Presidency Abolished
+            <span className="btn-sub">Destroys their winning set</span>
+          </button>
+        </div>
+        <button className="btn-cancel" onClick={onSkip}>Let them win</button>
+      </div>
+    </div>
+  );
+}
+
+function EpaReactModal({ winningPlayer, epaPlayer, winningHand, onReact, onAccept }: {
+  winningPlayer: Player; epaPlayer: Player; winningHand: string[];
+  onReact: (effectKey: 'father' | 'protest') => void; onAccept: () => void;
+}) {
+  const reactions: ('father' | 'protest')[] = [];
+  if (winningHand.some(id => getCardById(id).effectKey === 'father')) reactions.push('father');
+  if (winningHand.some(id => getCardById(id).effectKey === 'protest')) reactions.push('protest');
+
+  const labels: Record<string, string> = {
+    father: '👨 Do You Know My Father',
+    protest: '📢 Public Protest',
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal">
+        <h2>⚠️ {epaPlayer.name} played Executive Presidency Abolished!</h2>
+        <p className="modal-subtitle">
+          {winningPlayer.name}, do you want to react to save your victory?
+        </p>
+        <div className="modal-buttons">
+          {reactions.map(k => (
+            <button key={k} className="btn-action" onClick={() => onReact(k)}>
+              🛡 {labels[k]}
+              <span className="btn-sub">Cancel their card — you still win</span>
+            </button>
+          ))}
+        </div>
+        <button className="btn-cancel" onClick={onAccept}>Accept</button>
       </div>
     </div>
   );
@@ -1478,7 +1734,7 @@ function ReactionModal({
       <div className="modal">
         <h2>⚠️ {actingPlayer.name} played {actingCardName}</h2>
         <p className="modal-subtitle">
-          {targetPlayer.name}, do you want to react? ({availableReactions.length} option{availableReactions.length > 1 ? 's' : ''} available)
+          {targetPlayer.name}, do you want to react?
         </p>
         <div className="modal-buttons">
           {availableReactions.map(key => (
