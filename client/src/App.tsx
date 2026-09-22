@@ -26,6 +26,12 @@ interface GameState {
   log: string[];
 }
 
+// Snapshot for undo
+interface Snapshot {
+  game: GameState;
+  label: string;
+}
+
 type PendingChoice =
   | { type: 'action-choice'; cardId: string }
   | { type: 'hand-trim' }
@@ -35,6 +41,7 @@ type PendingChoice =
   | { type: 'coalition-mine'; cardId: string; targetSeat: number }
   | { type: 'coalition-theirs'; cardId: string; targetSeat: number; myCardId: string }
   | { type: 'wild-reorder'; wildId: string }
+  | { type: 'reorganize' }
   | { type: 'pick-power-card'; targetSeat: number }
   | { type: 'pick-set'; targetSeat: number }
   | { type: 'epa-window'; winningSeat: number; nextPlayerSeat: number }
@@ -100,9 +107,7 @@ function findWildTargets(player: Player): { setKey: string; setSize: number; exi
   for (const [key, cards] of Object.entries(groups)) {
     const sample = getCardById(cards[0]);
     const setSize = sample.setSize!;
-    const realCount = cards.length;
-    const needed = setSize - realCount;
-    if (needed > 0 && realCount >= 1) {
+    if (cards.length < setSize) {
       targets.push({ setKey: key, setSize, existing: cards });
     }
   }
@@ -220,7 +225,6 @@ function getAvailableReactions(target: Player, purpose: string): string[] {
   return options;
 }
 
-// Find next seat with EPA in hand, starting from a given seat (wrapping)
 function findNextEpaHolder(g: GameState, winningSeat: number, startFrom: number): number | null {
   const total = g.players.length;
   for (let offset = 0; offset < total; offset++) {
@@ -239,17 +243,39 @@ function App() {
   const [game, setGame] = useState<GameState>(() => dealCards());
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
   const [pendingChoice, setPendingChoice] = useState<PendingChoice>(null);
+  const [undoStack, setUndoStack] = useState<Snapshot[]>([]);
 
   const currentPlayer = game.players[game.currentTurn];
   const playsRemaining = MAX_PLAYS_PER_TURN - game.cardsPlayedThisTurn;
   const canPlay = playsRemaining > 0 && game.turnStarted && pendingChoice === null;
+  const canUndo = undoStack.length > 0 && pendingChoice === null && game.turnStarted;
 
-  // After any win trigger, open EPA window if any other player has EPA
+  // Push a snapshot before an action that can be undone
+  function pushUndo(label: string) {
+    setUndoStack(stack => [...stack, { game: cloneGame(game), label }]);
+  }
+
+  function performUndo() {
+    if (undoStack.length === 0) return;
+    const last = undoStack[undoStack.length - 1];
+    setUndoStack(stack => stack.slice(0, -1));
+    // Merge current log so history isn't lost
+    const restored = cloneGame(last.game);
+    restored.log = [...restored.log, `↩ Undo: ${last.label}`];
+    setGame(restored);
+    setSelectedCard(null);
+    setPendingChoice(null);
+  }
+
+  function clearUndo() {
+    setUndoStack([]);
+  }
+
   function triggerWinCheck(g: GameState, seat: number) {
     if (g.winnerSeat === null) return;
     const epaHolder = findNextEpaHolder(g, seat, (seat + 1) % g.players.length);
     if (epaHolder !== null) {
-      g.winnerSeat = null; // Hold off on win
+      g.winnerSeat = null;
       setTimeout(() => setPendingChoice({
         type: 'epa-window',
         winningSeat: seat,
@@ -259,6 +285,7 @@ function App() {
   }
 
   function startTurn() {
+    clearUndo();
     setGame(g => {
       if (g.turnStarted) return g;
       const newGame = cloneGame(g);
@@ -277,11 +304,20 @@ function App() {
       newGame.log.push(`${p.name} drew ${drawCount} card${drawCount > 1 ? 's' : ''}.`);
       newGame.turnStarted = true;
       newGame.cardsPlayedThisTurn = 0;
+      // FIX: reassemble sets at start of turn (catches any leftovers)
+      const newSets = regroupPowerCards(p);
+      if (newSets.length > 0) {
+        p.completedSets = [...p.completedSets, ...newSets];
+        recalcRank(p);
+        newGame.log.push(`${p.name} reassembled a set! Rank ${p.rank}.`);
+      }
       return newGame;
     });
   }
 
   function playAsFund(cardId: string) {
+    if (game.cardsPlayedThisTurn >= MAX_PLAYS_PER_TURN) return;
+    pushUndo(`banked ${getCardById(cardId).name}`);
     setGame(g => {
       if (g.cardsPlayedThisTurn >= MAX_PLAYS_PER_TURN) return g;
       const newGame = cloneGame(g);
@@ -340,11 +376,7 @@ function App() {
         if (target.powerCards.length === 0) {
           newGame.log.push(`${target.name} has no loose Power Cards.`);
         } else {
-          // NEW: open modal to pick the card
-          setTimeout(() => setPendingChoice({
-            type: 'pick-power-card',
-            targetSeat,
-          }), 0);
+          setTimeout(() => setPendingChoice({ type: 'pick-power-card', targetSeat }), 0);
         }
         break;
       }
@@ -354,11 +386,7 @@ function App() {
         } else if (target.completedSets.length >= 3) {
           newGame.log.push(`${target.name} has 3 sets — cannot target.`);
         } else {
-          // NEW: open modal to pick the set
-          setTimeout(() => setPendingChoice({
-            type: 'pick-set',
-            targetSeat,
-          }), 0);
+          setTimeout(() => setPendingChoice({ type: 'pick-set', targetSeat }), 0);
         }
         break;
       }
@@ -379,7 +407,6 @@ function App() {
         break;
       }
       case 'double_crossover': {
-        // FIX: steal from loose power AND completed sets
         for (const other of newGame.players) {
           if (other.seat === me.seat) continue;
           const stolenLoose: string[] = [];
@@ -434,7 +461,6 @@ function App() {
     }
   }
 
-  // FIX: Handle pick-power-card (No Confidence Motion)
   function pickPowerCard(cardId: string) {
     if (pendingChoice?.type !== 'pick-power-card') return;
     const targetSeat = pendingChoice.targetSeat;
@@ -452,7 +478,6 @@ function App() {
     setPendingChoice(null);
   }
 
-  // FIX: Handle pick-set (Cabinet Reshuffle)
   function pickSet(setIndex: number) {
     if (pendingChoice?.type !== 'pick-set') return;
     const targetSeat = pendingChoice.targetSeat;
@@ -463,7 +488,6 @@ function App() {
       const stolen = target.completedSets[setIndex];
       target.completedSets = target.completedSets.filter((_, i) => i !== setIndex);
       recalcRank(target);
-      // FIX: goes directly to my completed sets (instant rank up)
       me.completedSets.push([...stolen]);
       recalcRank(me);
       newGame.log.push(`${me.name} stole a complete set from ${target.name}. Rank ${me.rank}.`);
@@ -477,7 +501,6 @@ function App() {
     setPendingChoice(null);
   }
 
-  // FIX: EPA window — a player with EPA can play it
   function playEpa() {
     if (pendingChoice?.type !== 'epa-window') return;
     const winningSeat = pendingChoice.winningSeat;
@@ -490,7 +513,6 @@ function App() {
       epaPlayer.hand = epaPlayer.hand.filter(id => id !== epaCardId);
       newGame.commonDiscard.push(epaCardId);
       newGame.log.push(`${epaPlayer.name} played Executive Presidency Abolished!`);
-      // Winning player gets reaction chance
       const winner = newGame.players[winningSeat];
       const reactions = winner.hand.filter(id => {
         const k = getCardById(id).effectKey;
@@ -503,7 +525,6 @@ function App() {
           epaPlayerSeat: epaSeat,
         }), 0);
       } else {
-        // No reaction — resolve EPA
         const winnerP = newGame.players[winningSeat];
         const lastSet = winnerP.completedSets[winnerP.completedSets.length - 1];
         winnerP.completedSets = winnerP.completedSets.slice(0, -1);
@@ -521,7 +542,6 @@ function App() {
     const { winningSeat, nextPlayerSeat } = pendingChoice;
     setGame(g => {
       const newGame = cloneGame(g);
-      // Check if any other player after this one has EPA
       const nextEpa = findNextEpaHolder(newGame, winningSeat, (nextPlayerSeat + 1) % newGame.players.length);
       if (nextEpa !== null && nextEpa !== nextPlayerSeat) {
         setTimeout(() => setPendingChoice({
@@ -538,7 +558,6 @@ function App() {
     setPendingChoice(null);
   }
 
-  // FIX: EPA reaction — winning player counters
   function epaReact(effectKey: 'father' | 'protest') {
     if (pendingChoice?.type !== 'epa-react') return;
     const { winningSeat } = pendingChoice;
@@ -574,6 +593,8 @@ function App() {
   }
 
   function playAsAction(cardId: string) {
+    if (game.cardsPlayedThisTurn >= MAX_PLAYS_PER_TURN) return;
+    pushUndo(`played ${getCardById(cardId).name} as Action`);
     setGame(g => {
       if (g.cardsPlayedThisTurn >= MAX_PLAYS_PER_TURN) return g;
       const newGame = cloneGame(g);
@@ -676,6 +697,8 @@ function App() {
   }
 
   function playPower(cardId: string) {
+    if (game.cardsPlayedThisTurn >= MAX_PLAYS_PER_TURN) return;
+    pushUndo(`played ${getCardById(cardId).name}`);
     setGame(g => {
       if (g.cardsPlayedThisTurn >= MAX_PLAYS_PER_TURN) return g;
       const newGame = cloneGame(g);
@@ -708,6 +731,7 @@ function App() {
   function resolveWildReorder(destinationSetKey: string | 'loose') {
     if (pendingChoice?.type !== 'wild-reorder') return;
     const wildId = pendingChoice.wildId;
+    pushUndo('moved Common Candidate');
 
     setGame(g => {
       if (g.cardsPlayedThisTurn >= MAX_PLAYS_PER_TURN) return g;
@@ -740,7 +764,7 @@ function App() {
       if (destinationSetKey === 'loose') {
         p.powerCards.push(wildId);
         newGame.log.push(`${p.name} moved Common Candidate to loose Power.`);
-        if (brokeSet.length > 0) newGame.log.push(`(A set was broken — cards went loose.)`);
+        if (brokeSet.length > 0) newGame.log.push(`(A set was broken.)`);
       } else {
         const group = p.powerCards.filter(id => {
           const c = getCardById(id);
@@ -760,22 +784,127 @@ function App() {
           p.completedSets.push(combined.slice(0, setSize));
           recalcRank(p);
           newGame.log.push(`${p.name} completed a set with Common Candidate! Rank ${p.rank}.`);
-          if (p.completedSets.length >= 3) {
-            newGame.winnerSeat = p.seat;
-            newGame.log.push(`🏆 ${p.name} reached 3 sets!`);
-          }
         } else {
           p.powerCards.push(wildId);
           newGame.log.push(`${p.name} added Common Candidate to ${sample.name} (${combined.length}/${setSize}).`);
         }
-        if (brokeSet.length > 0) newGame.log.push(`(A previous set was broken — its cards went loose.)`);
+        if (brokeSet.length > 0) newGame.log.push(`(A previous set was broken.)`);
       }
 
       newGame.cardsPlayedThisTurn++;
+
+      // FIX: Reassemble remaining loose cards immediately
+      const reassembled = regroupPowerCards(p);
+      if (reassembled.length > 0) {
+        p.completedSets = [...p.completedSets, ...reassembled];
+        recalcRank(p);
+        newGame.log.push(`${p.name} reassembled ${reassembled.length} set(s)! Rank ${p.rank}.`);
+        if (p.completedSets.length >= 3) {
+          newGame.winnerSeat = p.seat;
+          newGame.log.push(`🏆 ${p.name} reached 3 sets!`);
+        }
+      }
       triggerWinCheck(newGame, p.seat);
       return newGame;
     });
 
+    setPendingChoice(null);
+  }
+
+  // ===== MANUAL REORGANIZE =====
+  function startReorganize() {
+    if (!game.turnStarted || pendingChoice !== null) return;
+    setPendingChoice({ type: 'reorganize' });
+  }
+
+  // Move one card from its current container to a target container
+  // target: { kind: 'loose' } | { kind: 'set', index: number }
+  // Returns true if a play was consumed
+  function reorganizeMoveCard(cardId: string, target: { kind: 'loose' } | { kind: 'set'; index: number }) {
+    const card = getCardById(cardId);
+    const isWild = !!card.isWild;
+    const cost = isWild ? 1 : 0;
+
+    if (cost > 0 && game.cardsPlayedThisTurn + cost > MAX_PLAYS_PER_TURN) {
+      return; // Not enough plays
+    }
+    pushUndo(`reorganized ${card.name}`);
+
+    setGame(g => {
+      const newGame = cloneGame(g);
+      const p = newGame.players[newGame.currentTurn];
+      const cardDef = getCardById(cardId);
+
+      // Determine where this card currently lives
+      let fromKind: 'loose' | 'set' = 'loose';
+      let fromSetIdx = -1;
+      for (let i = 0; i < p.completedSets.length; i++) {
+        if (p.completedSets[i].includes(cardId)) { fromKind = 'set'; fromSetIdx = i; break; }
+      }
+
+      // Validate target set for non-wild
+      if (!cardDef.isWild && target.kind === 'set') {
+        // Real cards can only join a set group they belong to.
+        // If target set doesn't exist yet, we're just rearranging loose → loose (no-op).
+        // For simplicity, non-wild cards always go to loose.
+        // So target.kind === 'set' only matters as "recompose later".
+        // We'll implement: non-wild moved to loose, then reassembly decides sets.
+        target = { kind: 'loose' };
+      }
+
+      // Remove card from current location
+      if (fromKind === 'set') {
+        const oldSet = p.completedSets[fromSetIdx];
+        const remaining = oldSet.filter(id => id !== cardId);
+        p.completedSets = p.completedSets.filter((_, i) => i !== fromSetIdx);
+        p.powerCards.push(...remaining);
+        recalcRank(p);
+      } else {
+        p.powerCards = p.powerCards.filter(id => id !== cardId);
+      }
+
+      // Place card at destination
+      if (target.kind === 'loose') {
+        p.powerCards.push(cardId);
+      } else {
+        // Target is a set index (only valid for wilds currently)
+        const targetSet = p.completedSets[target.index];
+        if (!targetSet) {
+          p.powerCards.push(cardId);
+        } else {
+          const updated = [...targetSet, cardId];
+          p.completedSets[target.index] = updated;
+        }
+      }
+
+      // Charge play if wild
+      if (cost > 0) newGame.cardsPlayedThisTurn += cost;
+
+      // Reassemble any newly-completable sets from loose
+      const reassembled = regroupPowerCards(p);
+      if (reassembled.length > 0) {
+        p.completedSets = [...p.completedSets, ...reassembled];
+        recalcRank(p);
+        newGame.log.push(`${p.name} reassembled ${reassembled.length} set(s).`);
+      }
+
+      // Cleanup: remove any empty completed sets
+      p.completedSets = p.completedSets.filter(s => s.length > 0);
+      recalcRank(p);
+
+      // Check win
+      if (p.completedSets.length >= 3) {
+        newGame.winnerSeat = p.seat;
+        newGame.log.push(`🏆 ${p.name} reached 3 sets!`);
+      }
+      triggerWinCheck(newGame, p.seat);
+
+      newGame.log.push(`${p.name} reorganized: moved ${cardDef.name}${cost > 0 ? ` (cost ${cost} play)` : ' (free)'}.`);
+      return newGame;
+    });
+  }
+
+  function confirmReorganize() {
     setPendingChoice(null);
   }
 
@@ -992,6 +1121,7 @@ function App() {
   }
 
   function endTurn() {
+    clearUndo();
     setGame(g => {
       const newGame = cloneGame(g);
       const p = newGame.players[newGame.currentTurn];
@@ -1023,12 +1153,14 @@ function App() {
       return newGame;
     });
     setPendingChoice(null);
+    clearUndo();
   }
 
   function resetGame() {
     setGame(dealCards());
     setSelectedCard(null);
     setPendingChoice(null);
+    clearUndo();
   }
 
   if (game.winnerSeat !== null) {
@@ -1092,6 +1224,14 @@ function App() {
 
       <div className="controls">
         {!game.turnStarted && <button onClick={startTurn}>Start Turn (Draw)</button>}
+        {game.turnStarted && (
+          <button onClick={startReorganize} disabled={pendingChoice !== null}>
+            🔧 Reorganize Sets
+          </button>
+        )}
+        <button onClick={performUndo} disabled={!canUndo} className="secondary">
+          ↩ Undo{undoStack.length > 0 ? ` (${undoStack[undoStack.length - 1].label})` : ''}
+        </button>
         <button onClick={endTurn} disabled={pendingChoice !== null}>End Turn</button>
         <button onClick={resetGame} className="secondary">Restart</button>
       </div>
@@ -1158,6 +1298,15 @@ function App() {
           wildId={pendingChoice.wildId}
           onChoose={resolveWildReorder}
           onCancel={() => setPendingChoice(null)}
+        />
+      )}
+
+      {pendingChoice?.type === 'reorganize' && (
+        <ReorganizeModal
+          player={currentPlayer}
+          playsRemaining={playsRemaining}
+          onMoveCard={reorganizeMoveCard}
+          onClose={confirmReorganize}
         />
       )}
 
@@ -1584,6 +1733,128 @@ function WildReorderModal({ player, wildId, onChoose, onCancel }: {
           </button>
         </div>
         <button className="btn-cancel" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// ============ REORGANIZE MODAL ============
+function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
+  player: Player;
+  playsRemaining: number;
+  onMoveCard: (cardId: string, target: { kind: 'loose' } | { kind: 'set'; index: number }) => void;
+  onClose: () => void;
+}) {
+  const [selectedCard, setSelectedCard] = useState<string | null>(null);
+
+  function handleMoveToLoose() {
+    if (!selectedCard) return;
+    onMoveCard(selectedCard, { kind: 'loose' });
+    setSelectedCard(null);
+  }
+
+  function handleMoveToSet(idx: number) {
+    if (!selectedCard) return;
+    onMoveCard(selectedCard, { kind: 'set', index: idx });
+    setSelectedCard(null);
+  }
+
+  const card = selectedCard ? getCardById(selectedCard) : null;
+  const cost = card?.isWild ? 1 : 0;
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal modal-wide">
+        <h2>🔧 Reorganize Sets</h2>
+        <p className="modal-subtitle">
+          Click a card to select it, then click a destination.
+          Wilds cost 1 play · Non-wilds are free. Plays left: {playsRemaining}.
+        </p>
+
+        {/* Loose Power Cards */}
+        <h3 style={{ marginTop: 12, fontSize: 14, color: '#c9a227' }}>Loose Power Cards</h3>
+        <div className="trim-cards">
+          {player.powerCards.length === 0 && <p style={{ color: '#666' }}>None</p>}
+          {player.powerCards.map(id => {
+            const c = getCardById(id);
+            const isSel = selectedCard === id;
+            return (
+              <div
+                key={id}
+                className={`mini-card ${isSel ? 'selected' : ''}`}
+                style={{ outline: isSel ? '3px solid #fff' : undefined }}
+                onClick={() => setSelectedCard(isSel ? null : id)}
+                title={`${c.name}${c.isWild ? ' (Wild — costs 1 play)' : ''}`}
+              >
+                <MiniCard cardId={id} />
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Completed Sets */}
+        <h3 style={{ marginTop: 16, fontSize: 14, color: '#c9a227' }}>Completed Sets</h3>
+        <div className="trim-cards">
+          {player.completedSets.length === 0 && <p style={{ color: '#666' }}>None</p>}
+          {player.completedSets.map((set, i) => (
+            <div key={i} className="completed-set" style={{ cursor: 'pointer' }}>
+              {set.map(id => {
+                const c = getCardById(id);
+                const isSel = selectedCard === id;
+                return (
+                  <div
+                    key={id}
+                    className={`mini-card ${isSel ? 'selected' : ''}`}
+                    style={{ outline: isSel ? '3px solid #fff' : undefined }}
+                    onClick={(e) => { e.stopPropagation(); setSelectedCard(isSel ? null : id); }}
+                    title={c.name}
+                  >
+                    <MiniCard cardId={id} />
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
+        {/* Action buttons */}
+        {selectedCard && (
+          <div style={{
+            marginTop: 20,
+            padding: 12,
+            background: 'rgba(255,255,255,0.06)',
+            borderRadius: 8,
+            textAlign: 'left',
+          }}>
+            <p style={{ marginBottom: 8 }}>
+              <strong>Selected:</strong> {card?.name}{' '}
+              {cost > 0
+                ? <span style={{ color: '#e94560' }}>(Wild — costs 1 play)</span>
+                : <span style={{ color: '#2d8f4e' }}>(Free)</span>}
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn-fund" onClick={handleMoveToLoose}>↩ Move to Loose</button>
+              {player.completedSets.map((_, i) => (
+                <button
+                  key={i}
+                  className="btn-action"
+                  onClick={() => handleMoveToSet(i)}
+                >
+                  📦 Move to Set #{i + 1}
+                </button>
+              ))}
+            </div>
+            {cost > 0 && playsRemaining < cost && (
+              <p style={{ color: '#e94560', marginTop: 8, fontSize: 12 }}>
+                ⚠️ Not enough plays left for this move.
+              </p>
+            )}
+          </div>
+        )}
+
+        <button className="btn-confirm" onClick={onClose} style={{ marginTop: 20 }}>
+          Done
+        </button>
       </div>
     </div>
   );

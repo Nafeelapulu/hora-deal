@@ -481,4 +481,32 @@ body {
 .mini-card.wild-clickable:hover {
   transform: translateY(-8px);
   box-shadow: 0 0 0 3px #ff79c6, 0 8px 20px rgba(255, 121, 198, 0.6);
+}/* ============ REORGANIZE + UNDO ============ */
+.controls button.secondary:disabled,
+.controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Reorganize modal card selection glow */
+.modal .completed-set .mini-card {
+  transition: outline 0.1s, transform 0.15s;
+  cursor: pointer;
+}
+
+.modal .completed-set .mini-card:hover {
+  transform: translateY(-4px);
+}
+
+.modal .mini-card {
+  cursor: pointer;
+}
+
+.modal h3 {
+  font-size: 14px;
+  color: #c9a227;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 16px;
+  margin-bottom: 8px;
 }
