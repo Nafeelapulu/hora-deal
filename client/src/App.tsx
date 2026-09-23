@@ -417,15 +417,22 @@ function RulesScreen({ onBack }: { onBack: () => void }) {
       <div style={{ maxWidth: 800, margin: '0 auto' }}>
         <button onClick={onBack} style={menuBackButtonStyle}>← Back to Menu</button>
 
-        <h1 style={{
-          fontSize: '2.5rem',
+                <h1 style={{
+          fontSize: 'clamp(1.5rem, 5vw, 2.5rem)',
           color: '#e94560',
           marginTop: 20,
           marginBottom: 8,
+          lineHeight: 1.2,
+          wordBreak: 'break-word',
         }}>
-          හොර DEAL — How to Play
+          හොර DEAL - How to Play
         </h1>
-        <p style={{ color: '#c9a227', marginTop: 0 }}>
+        <p style={{
+          color: '#c9a227',
+          marginTop: 0,
+          fontSize: 'clamp(0.9rem, 2.5vw, 1rem)',
+          lineHeight: 1.4,
+        }}>
           Rise from Regular Hora to President
         </p>
 
@@ -528,9 +535,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     }}>
       <h2 style={{
         color: '#c9a227',
-        fontSize: '1.2rem',
+        fontSize: 'clamp(1rem, 3vw, 1.2rem)',
         marginTop: 0,
         marginBottom: 12,
+        lineHeight: 1.3,
+        wordBreak: 'break-word',
       }}>
         {title}
       </h2>
