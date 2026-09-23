@@ -138,9 +138,22 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
   // ============ RENDER ============
   return (
     <div style={{ padding: 20, color: '#eee', background: '#1a1a2e', minHeight: '100vh' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
+      }}>
         <button onClick={handleBack} style={backButtonStyle}>← Back</button>
-        <h2 style={{ margin: 0 }}>🌐 Hora Deal Online</h2>
+        <img
+          src="/cards/logo.png"
+          alt="හොර DEAL"
+          style={{
+            height: 60,
+            width: 'auto',
+            filter: 'drop-shadow(0 4px 16px rgba(233,69,96,0.4))',
+          }}
+        />
         <div style={{ width: 80 }} />
       </div>
 
