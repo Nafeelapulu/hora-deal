@@ -7,17 +7,16 @@
     "start": "ts-node src/index.ts",
     "dev": "ts-node src/index.ts"
   },
-  "keywords": [
-    "game",
-    "multiplayer",
-    "card-game"
-  ],
+  "keywords": ["game", "multiplayer", "card-game"],
   "author": "",
   "license": "ISC",
+  "type": "commonjs",
   "dependencies": {
-    "@colyseus/monitor": "^0.18.4",
-    "@colyseus/schema": "^5.0.33",
-    "colyseus": "^0.18.7",
+    "@colyseus/core": "^0.16.0",
+    "@colyseus/monitor": "^0.16.0",
+    "@colyseus/schema": "^3.0.0",
+    "@colyseus/ws-transport": "^0.16.0",
+    "colyseus": "^0.16.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.3",
     "express": "^5.2.1"

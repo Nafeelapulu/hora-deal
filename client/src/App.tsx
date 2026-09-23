@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ALL_CARDS, getCardById } from '../../shared/cards';
 import './App.css';
+import MultiplayerTest from './MultiplayerTest';
 
 // ============ TYPES ============
 interface Player {
@@ -26,7 +27,6 @@ interface GameState {
   log: string[];
 }
 
-// Snapshot for undo
 interface Snapshot {
   game: GameState;
   label: string;
@@ -244,13 +244,13 @@ function App() {
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
   const [pendingChoice, setPendingChoice] = useState<PendingChoice>(null);
   const [undoStack, setUndoStack] = useState<Snapshot[]>([]);
+  const [showMultiplayer, setShowMultiplayer] = useState(false);
 
   const currentPlayer = game.players[game.currentTurn];
   const playsRemaining = MAX_PLAYS_PER_TURN - game.cardsPlayedThisTurn;
   const canPlay = playsRemaining > 0 && game.turnStarted && pendingChoice === null;
   const canUndo = undoStack.length > 0 && pendingChoice === null && game.turnStarted;
 
-  // Push a snapshot before an action that can be undone
   function pushUndo(label: string) {
     setUndoStack(stack => [...stack, { game: cloneGame(game), label }]);
   }
@@ -259,7 +259,6 @@ function App() {
     if (undoStack.length === 0) return;
     const last = undoStack[undoStack.length - 1];
     setUndoStack(stack => stack.slice(0, -1));
-    // Merge current log so history isn't lost
     const restored = cloneGame(last.game);
     restored.log = [...restored.log, `↩ Undo: ${last.label}`];
     setGame(restored);
@@ -304,7 +303,6 @@ function App() {
       newGame.log.push(`${p.name} drew ${drawCount} card${drawCount > 1 ? 's' : ''}.`);
       newGame.turnStarted = true;
       newGame.cardsPlayedThisTurn = 0;
-      // FIX: reassemble sets at start of turn (catches any leftovers)
       const newSets = regroupPowerCards(p);
       if (newSets.length > 0) {
         p.completedSets = [...p.completedSets, ...newSets];
@@ -722,7 +720,6 @@ function App() {
     if (pendingChoice?.type !== 'wild-choice') setPendingChoice(null);
   }
 
-  // ===== WILD REORDER =====
   function startWildReorder(wildId: string) {
     if (!canPlay) return;
     setPendingChoice({ type: 'wild-reorder', wildId });
@@ -793,7 +790,6 @@ function App() {
 
       newGame.cardsPlayedThisTurn++;
 
-      // FIX: Reassemble remaining loose cards immediately
       const reassembled = regroupPowerCards(p);
       if (reassembled.length > 0) {
         p.completedSets = [...p.completedSets, ...reassembled];
@@ -811,22 +807,18 @@ function App() {
     setPendingChoice(null);
   }
 
-  // ===== MANUAL REORGANIZE =====
   function startReorganize() {
     if (!game.turnStarted || pendingChoice !== null) return;
     setPendingChoice({ type: 'reorganize' });
   }
 
-  // Move one card from its current container to a target container
-  // target: { kind: 'loose' } | { kind: 'set', index: number }
-  // Returns true if a play was consumed
   function reorganizeMoveCard(cardId: string, target: { kind: 'loose' } | { kind: 'set'; index: number }) {
     const card = getCardById(cardId);
     const isWild = !!card.isWild;
     const cost = isWild ? 1 : 0;
 
     if (cost > 0 && game.cardsPlayedThisTurn + cost > MAX_PLAYS_PER_TURN) {
-      return; // Not enough plays
+      return;
     }
     pushUndo(`reorganized ${card.name}`);
 
@@ -835,24 +827,16 @@ function App() {
       const p = newGame.players[newGame.currentTurn];
       const cardDef = getCardById(cardId);
 
-      // Determine where this card currently lives
       let fromKind: 'loose' | 'set' = 'loose';
       let fromSetIdx = -1;
       for (let i = 0; i < p.completedSets.length; i++) {
         if (p.completedSets[i].includes(cardId)) { fromKind = 'set'; fromSetIdx = i; break; }
       }
 
-      // Validate target set for non-wild
       if (!cardDef.isWild && target.kind === 'set') {
-        // Real cards can only join a set group they belong to.
-        // If target set doesn't exist yet, we're just rearranging loose → loose (no-op).
-        // For simplicity, non-wild cards always go to loose.
-        // So target.kind === 'set' only matters as "recompose later".
-        // We'll implement: non-wild moved to loose, then reassembly decides sets.
         target = { kind: 'loose' };
       }
 
-      // Remove card from current location
       if (fromKind === 'set') {
         const oldSet = p.completedSets[fromSetIdx];
         const remaining = oldSet.filter(id => id !== cardId);
@@ -863,11 +847,9 @@ function App() {
         p.powerCards = p.powerCards.filter(id => id !== cardId);
       }
 
-      // Place card at destination
       if (target.kind === 'loose') {
         p.powerCards.push(cardId);
       } else {
-        // Target is a set index (only valid for wilds currently)
         const targetSet = p.completedSets[target.index];
         if (!targetSet) {
           p.powerCards.push(cardId);
@@ -877,10 +859,8 @@ function App() {
         }
       }
 
-      // Charge play if wild
       if (cost > 0) newGame.cardsPlayedThisTurn += cost;
 
-      // Reassemble any newly-completable sets from loose
       const reassembled = regroupPowerCards(p);
       if (reassembled.length > 0) {
         p.completedSets = [...p.completedSets, ...reassembled];
@@ -888,11 +868,9 @@ function App() {
         newGame.log.push(`${p.name} reassembled ${reassembled.length} set(s).`);
       }
 
-      // Cleanup: remove any empty completed sets
       p.completedSets = p.completedSets.filter(s => s.length > 0);
       recalcRank(p);
 
-      // Check win
       if (p.completedSets.length >= 3) {
         newGame.winnerSeat = p.seat;
         newGame.log.push(`🏆 ${p.name} reached 3 sets!`);
@@ -1163,6 +1141,25 @@ function App() {
     clearUndo();
   }
 
+  // ============ MULTIPLAYER MODE ============
+  if (showMultiplayer) {
+    return (
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={() => setShowMultiplayer(false)}
+          style={{
+            position: 'fixed', top: 12, left: 12, zIndex: 2000,
+            background: '#444', color: '#fff', padding: '8px 16px',
+            border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 'bold',
+          }}
+        >
+          ← Back to Game
+        </button>
+        <MultiplayerTest />
+      </div>
+    );
+  }
+
   if (game.winnerSeat !== null) {
     return (
       <div className="app">
@@ -1223,6 +1220,9 @@ function App() {
       />
 
       <div className="controls">
+        <button onClick={() => setShowMultiplayer(true)} style={{ background: '#2d8f4e' }}>
+          🌐 Multiplayer
+        </button>
         {!game.turnStarted && <button onClick={startTurn}>Start Turn (Draw)</button>}
         {game.turnStarted && (
           <button onClick={startReorganize} disabled={pendingChoice !== null}>
@@ -1738,7 +1738,6 @@ function WildReorderModal({ player, wildId, onChoose, onCancel }: {
   );
 }
 
-// ============ REORGANIZE MODAL ============
 function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
   player: Player;
   playsRemaining: number;
@@ -1771,7 +1770,6 @@ function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
           Wilds cost 1 play · Non-wilds are free. Plays left: {playsRemaining}.
         </p>
 
-        {/* Loose Power Cards */}
         <h3 style={{ marginTop: 12, fontSize: 14, color: '#c9a227' }}>Loose Power Cards</h3>
         <div className="trim-cards">
           {player.powerCards.length === 0 && <p style={{ color: '#666' }}>None</p>}
@@ -1792,7 +1790,6 @@ function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
           })}
         </div>
 
-        {/* Completed Sets */}
         <h3 style={{ marginTop: 16, fontSize: 14, color: '#c9a227' }}>Completed Sets</h3>
         <div className="trim-cards">
           {player.completedSets.length === 0 && <p style={{ color: '#666' }}>None</p>}
@@ -1817,7 +1814,6 @@ function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
           ))}
         </div>
 
-        {/* Action buttons */}
         {selectedCard && (
           <div style={{
             marginTop: 20,
@@ -1860,7 +1856,6 @@ function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
   );
 }
 
-// ============ NEW MODALS ============
 function PickPowerCardModal({ target, onPick, onCancel }: {
   target: Player; onPick: (cardId: string) => void; onCancel: () => void;
 }) {
@@ -1978,7 +1973,6 @@ function EpaReactModal({ winningPlayer, epaPlayer, winningHand, onReact, onAccep
   );
 }
 
-// ============ REACTION MODAL ============
 function ReactionModal({
   actingPlayer, targetPlayer, actingCardName, availableReactions, onReact, onAccept,
 }: {
