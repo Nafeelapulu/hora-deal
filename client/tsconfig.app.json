@@ -14,12 +14,7 @@
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noFallthroughCasesInSwitch": true,
-   "baseUrl": ".",
-"paths": {
-  "@shared/*": ["../shared/*"]
-},
-"ignoreDeprecations": "6.0"
+    "noFallthroughCasesInSwitch": true
   },
   "include": ["src"]
 }
