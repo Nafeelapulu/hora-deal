@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ALL_CARDS, getCardById } from '../../shared/cards';
 import './App.css';
-import MultiplayerTest from './MultiplayerTest';
+import MultiplayerGame from './MultiplayerGame';
+import CardGallery from './CardGallery';
 
 // ============ TYPES ============
 interface Player {
@@ -57,6 +58,8 @@ type PendingChoice =
         | { kind: 'prorogued' };
     }
   | null;
+
+type AppScreen = 'menu' | 'local' | 'online' | 'gallery' | 'rules';
 
 const MAX_PLAYS_PER_TURN = 3;
 
@@ -215,11 +218,8 @@ function getAvailableReactions(target: Player, purpose: string): string[] {
   const hasMathaka = target.hand.some(id => getCardById(id).effectKey === 'mathaka');
   const hasFather = target.hand.some(id => getCardById(id).effectKey === 'father');
   const hasProtest = target.hand.some(id => getCardById(id).effectKey === 'protest');
-
   const missTurnCards = ['fcid', 'white_van', 'injunction', 'prorogued'];
-  if (missTurnCards.includes(purpose) && hasMathaka) {
-    options.push('mathaka');
-  }
+  if (missTurnCards.includes(purpose) && hasMathaka) options.push('mathaka');
   if (hasFather) options.push('father');
   if (hasProtest) options.push('protest');
   return options;
@@ -240,11 +240,320 @@ function findNextEpaHolder(g: GameState, winningSeat: number, startFrom: number)
 
 // ============ MAIN APP ============
 function App() {
+  const [screen, setScreen] = useState<AppScreen>('menu');
+
+  // Menu
+  if (screen === 'menu') {
+    return <MainMenu onNavigate={setScreen} />;
+  }
+
+  if (screen === 'online') {
+    return <MultiplayerGame onBack={() => setScreen('menu')} />;
+  }
+
+  if (screen === 'gallery') {
+    return (
+      <div>
+        <div style={{
+          padding: '10px 20px',
+          display: 'flex',
+          justifyContent: 'flex-start',
+          background: '#1a1a2e',
+        }}>
+          <button onClick={() => setScreen('menu')} style={menuBackButtonStyle}>
+            ← Back to Menu
+          </button>
+        </div>
+        <CardGallery />
+      </div>
+    );
+  }
+
+  if (screen === 'rules') {
+    return <RulesScreen onBack={() => setScreen('menu')} />;
+  }
+
+  if (screen === 'local') {
+    return <LocalGame onBack={() => setScreen('menu')} />;
+  }
+
+  return null;
+}
+
+// ============ MAIN MENU ============
+function MainMenu({ onNavigate }: { onNavigate: (s: AppScreen) => void }) {
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f1a2e 100%)',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 20,
+      color: '#eee',
+    }}>
+      <div style={{ textAlign: 'center', marginBottom: 40 }}>
+        <h1 style={{
+          fontSize: '4rem',
+          margin: 0,
+          color: '#e94560',
+          textShadow: '2px 2px 4px rgba(0,0,0,0.5), 0 0 20px rgba(233,69,96,0.4)',
+          letterSpacing: 2,
+        }}>
+          හොර DEAL
+        </h1>
+        <p style={{
+          fontSize: '1.2rem',
+          color: '#c9a227',
+          margin: '8px 0 0 0',
+          fontWeight: 'bold',
+          letterSpacing: 1,
+        }}>
+          A Political Satire Card Game
+        </p>
+        <p style={{ fontSize: '0.9rem', color: '#888', margin: '8px 0 0 0' }}>
+          Rise from Regular Hora to President
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%', maxWidth: 360 }}>
+        <MenuButton
+          label="🎮 Play Local"
+          subtitle="2 players · hot-seat"
+          color="#e94560"
+          onClick={() => onNavigate('local')}
+        />
+        <MenuButton
+          label="🌐 Play Online"
+          subtitle="Multiplayer with friends"
+          color="#2d8f4e"
+          onClick={() => onNavigate('online')}
+        />
+        <MenuButton
+          label="📖 How to Play"
+          subtitle="Rules & cards"
+          color="#c9a227"
+          dark
+          onClick={() => onNavigate('rules')}
+        />
+        <MenuButton
+          label="🎴 Card Gallery"
+          subtitle="View all 106 cards"
+          color="#6c5ce7"
+          onClick={() => onNavigate('gallery')}
+        />
+      </div>
+
+      <p style={{ marginTop: 40, fontSize: 11, color: '#555' }}>
+        v1.0 · Made by you · Enjoy!
+      </p>
+    </div>
+  );
+}
+
+function MenuButton({
+  label, subtitle, color, dark, onClick,
+}: {
+  label: string;
+  subtitle: string;
+  color: string;
+  dark?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '18px 24px',
+        background: color,
+        color: dark ? '#000' : '#fff',
+        border: 'none',
+        borderRadius: 12,
+        cursor: 'pointer',
+        textAlign: 'left',
+        fontSize: 18,
+        fontWeight: 'bold',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+        transition: 'transform 0.15s, box-shadow 0.15s',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+      }}
+      onMouseEnter={e => {
+        (e.target as HTMLButtonElement).style.transform = 'translateY(-3px)';
+        (e.target as HTMLButtonElement).style.boxShadow = '0 8px 20px rgba(0,0,0,0.4)';
+      }}
+      onMouseLeave={e => {
+        (e.target as HTMLButtonElement).style.transform = 'translateY(0)';
+        (e.target as HTMLButtonElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+      }}
+    >
+      <span>{label}</span>
+      <span style={{ fontSize: 11, opacity: 0.85, fontWeight: 'normal' }}>{subtitle}</span>
+    </button>
+  );
+}
+
+// ============ RULES SCREEN ============
+function RulesScreen({ onBack }: { onBack: () => void }) {
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: '#1a1a2e',
+      color: '#eee',
+      padding: 20,
+    }}>
+      <div style={{ maxWidth: 800, margin: '0 auto' }}>
+        <button onClick={onBack} style={menuBackButtonStyle}>← Back to Menu</button>
+
+        <h1 style={{
+          fontSize: '2.5rem',
+          color: '#e94560',
+          marginTop: 20,
+          marginBottom: 8,
+        }}>
+          හොර DEAL — How to Play
+        </h1>
+        <p style={{ color: '#c9a227', marginTop: 0 }}>
+          Rise from Regular Hora to President
+        </p>
+
+        <Section title="🎯 Goal">
+          <p>Be the first player to complete <strong>3 different sets</strong> of Power Cards. You become <strong>President</strong> and win.</p>
+          <div style={{ marginTop: 12 }}>
+            <RankLine rank="Regular Hora" sets={0} />
+            <RankLine rank="Provincial Councillor" sets={1} />
+            <RankLine rank="Cabinet Minister" sets={2} />
+            <RankLine rank="President (Winner)" sets={3} highlight />
+          </div>
+        </Section>
+
+        <Section title="🃏 Your Turn">
+          <ol style={{ paddingLeft: 20, lineHeight: 1.8 }}>
+            <li><strong>Draw 2 cards</strong> (draw 5 if you have 2 or fewer cards in hand).</li>
+            <li>Play up to <strong>3 cards</strong> in any combination:
+              <ul style={{ paddingLeft: 20, marginTop: 4 }}>
+                <li><strong>Money</strong> → goes to your Fund pile (as cash)</li>
+                <li><strong>Power</strong> → goes to your table (forms sets)</li>
+                <li><strong>Action</strong> → either bank as Fund, or play for its effect</li>
+              </ul>
+            </li>
+            <li>End your turn. If hand &gt; 7 cards, discard down to 7.</li>
+          </ol>
+        </Section>
+
+        <Section title="💰 Campaign Fund">
+          <p>Money in your Fund pile is used to pay for cards. You can also pay with Power Cards (including cards in your completed sets, which breaks the set).</p>
+          <p style={{ marginTop: 8, color: '#aaa', fontSize: 14 }}>No change is given — if you overpay, you overpay.</p>
+        </Section>
+
+        <Section title="👑 Power Cards & Sets">
+          <p>Collect matching Power Cards to form sets. Once you have the required number, the set completes automatically.</p>
+          <ul style={{ paddingLeft: 20, marginTop: 8, lineHeight: 1.8 }}>
+            <li>Sets are <strong>visible to all players</strong> — that's the race.</li>
+            <li><strong>Common Candidate</strong> (Wild) can join any set, but max 1 per set (2 for Relations in Power).</li>
+            <li>On your turn, you can move a Wild between sets — costs 1 play.</li>
+          </ul>
+        </Section>
+
+        <Section title="⚡ Action Cards">
+          <p>Action Cards have two uses:</p>
+          <ul style={{ paddingLeft: 20, marginTop: 8, lineHeight: 1.8 }}>
+            <li><strong>Play as Fund</strong> — bank it for its BN value.</li>
+            <li><strong>Play as Action</strong> — resolve its special effect.</li>
+          </ul>
+          <p style={{ marginTop: 12, fontSize: 14, color: '#aaa' }}>
+            Highlights include Bribe, No Confidence Motion, Cabinet Reshuffle, CoupLK, and Bond Scam.
+          </p>
+        </Section>
+
+        <Section title="🛡 Reactions">
+          <p>Some Action Cards can be <strong>cancelled by the target</strong>:</p>
+          <ul style={{ paddingLeft: 20, marginTop: 8, lineHeight: 1.8 }}>
+            <li><strong>Mathaka Na</strong> — cancels only "miss a turn" cards.</li>
+            <li><strong>Do You Know My Father</strong> — cancels any Action Card.</li>
+            <li><strong>Public Protest</strong> — cancels any Action Card.</li>
+          </ul>
+          <p style={{ marginTop: 12, fontSize: 14, color: '#aaa' }}>
+            Only the target can react. No timer — decide at your own pace.
+          </p>
+        </Section>
+
+        <Section title="🏛️ The Central Bank">
+          <p>Some cards force money into the Central Bank. Only <strong>Bond Scam</strong> can pull money out — the amount scales with your rank.</p>
+        </Section>
+
+        <Section title="🚨 Executive Presidency Abolished">
+          <p>The ultimate emergency card. When a player is about to win with their 3rd set, any other player holding E.P.A. can play it to destroy their last set.</p>
+          <p style={{ marginTop: 8 }}>But the winning player can counter with <strong>Do You Know My Father</strong> or <strong>Public Protest</strong> — and still win!</p>
+        </Section>
+
+        <Section title="🎮 Local vs Online">
+          <p><strong>Play Local</strong> — 2 players on one screen (hot-seat).</p>
+          <p style={{ marginTop: 4 }}><strong>Play Online</strong> — 2–5 players from anywhere. Share a room code.</p>
+        </Section>
+
+        <div style={{ marginTop: 40, textAlign: 'center' }}>
+          <button onClick={onBack} style={{
+            ...primaryButtonStyle,
+            padding: '14px 40px',
+            fontSize: 16,
+          }}>
+            ← Back to Menu
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      background: '#252547',
+      padding: 20,
+      borderRadius: 12,
+      marginBottom: 16,
+    }}>
+      <h2 style={{
+        color: '#c9a227',
+        fontSize: '1.2rem',
+        marginTop: 0,
+        marginBottom: 12,
+      }}>
+        {title}
+      </h2>
+      <div style={{ lineHeight: 1.6 }}>{children}</div>
+    </div>
+  );
+}
+
+function RankLine({ rank, sets, highlight }: { rank: string; sets: number; highlight?: boolean }) {
+  return (
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      padding: '6px 12px',
+      background: highlight ? 'rgba(201,162,39,0.2)' : 'rgba(255,255,255,0.05)',
+      borderRadius: 6,
+      marginBottom: 4,
+      border: highlight ? '1px solid #c9a227' : 'none',
+    }}>
+      <span style={{ color: highlight ? '#c9a227' : '#eee', fontWeight: highlight ? 'bold' : 'normal' }}>
+        {rank}
+      </span>
+      <span style={{ color: '#888', fontSize: 13 }}>{sets} set{sets !== 1 ? 's' : ''}</span>
+    </div>
+  );
+}
+
+// ============ LOCAL GAME ============
+function LocalGame({ onBack }: { onBack: () => void }) {
   const [game, setGame] = useState<GameState>(() => dealCards());
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
   const [pendingChoice, setPendingChoice] = useState<PendingChoice>(null);
   const [undoStack, setUndoStack] = useState<Snapshot[]>([]);
-  const [showMultiplayer, setShowMultiplayer] = useState(false);
 
   const currentPlayer = game.players[game.currentTurn];
   const playsRemaining = MAX_PLAYS_PER_TURN - game.cardsPlayedThisTurn;
@@ -817,9 +1126,7 @@ function App() {
     const isWild = !!card.isWild;
     const cost = isWild ? 1 : 0;
 
-    if (cost > 0 && game.cardsPlayedThisTurn + cost > MAX_PLAYS_PER_TURN) {
-      return;
-    }
+    if (cost > 0 && game.cardsPlayedThisTurn + cost > MAX_PLAYS_PER_TURN) return;
     pushUndo(`reorganized ${card.name}`);
 
     setGame(g => {
@@ -833,9 +1140,7 @@ function App() {
         if (p.completedSets[i].includes(cardId)) { fromKind = 'set'; fromSetIdx = i; break; }
       }
 
-      if (!cardDef.isWild && target.kind === 'set') {
-        target = { kind: 'loose' };
-      }
+      if (!cardDef.isWild && target.kind === 'set') target = { kind: 'loose' };
 
       if (fromKind === 'set') {
         const oldSet = p.completedSets[fromSetIdx];
@@ -851,12 +1156,8 @@ function App() {
         p.powerCards.push(cardId);
       } else {
         const targetSet = p.completedSets[target.index];
-        if (!targetSet) {
-          p.powerCards.push(cardId);
-        } else {
-          const updated = [...targetSet, cardId];
-          p.completedSets[target.index] = updated;
-        }
+        if (!targetSet) p.powerCards.push(cardId);
+        else p.completedSets[target.index] = [...targetSet, cardId];
       }
 
       if (cost > 0) newGame.cardsPlayedThisTurn += cost;
@@ -876,7 +1177,6 @@ function App() {
         newGame.log.push(`🏆 ${p.name} reached 3 sets!`);
       }
       triggerWinCheck(newGame, p.seat);
-
       newGame.log.push(`${p.name} reorganized: moved ${cardDef.name}${cost > 0 ? ` (cost ${cost} play)` : ' (free)'}.`);
       return newGame;
     });
@@ -1010,7 +1310,7 @@ function App() {
 
   function playReaction(reactionEffectKey: string) {
     if (pendingChoice?.type !== 'reaction') return;
-    const { actingCardId, targetSeat, actingPlayerSeat } = pendingChoice;
+    const { actingCardId, targetSeat } = pendingChoice;
 
     setGame(g => {
       const newGame = cloneGame(g);
@@ -1074,11 +1374,8 @@ function App() {
         const receiver = newGame.players[payee];
         for (const id of cardIds) {
           const card = getCardById(id);
-          if (card.type === 'POWER') {
-            receiver.powerCards.push(id);
-          } else {
-            receiver.campaignFund.push(id);
-          }
+          if (card.type === 'POWER') receiver.powerCards.push(id);
+          else receiver.campaignFund.push(id);
         }
         const newSets = regroupPowerCards(receiver);
         if (newSets.length > 0) {
@@ -1141,30 +1438,12 @@ function App() {
     clearUndo();
   }
 
-  // ============ MULTIPLAYER MODE ============
-  if (showMultiplayer) {
-    return (
-      <div style={{ position: 'relative' }}>
-        <button
-          onClick={() => setShowMultiplayer(false)}
-          style={{
-            position: 'fixed', top: 12, left: 12, zIndex: 2000,
-            background: '#444', color: '#fff', padding: '8px 16px',
-            border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 'bold',
-          }}
-        >
-          ← Back to Game
-        </button>
-        <MultiplayerTest />
-      </div>
-    );
-  }
-
   if (game.winnerSeat !== null) {
     return (
       <div className="app">
         <h1>🏆 {game.players[game.winnerSeat].name} is President!</h1>
         <button onClick={resetGame}>Play Again</button>
+        <button onClick={onBack} style={{ background: '#444', marginTop: 12 }}>← Back to Menu</button>
       </div>
     );
   }
@@ -1179,6 +1458,10 @@ function App() {
 
   return (
     <div className="game-board">
+      <div style={{ padding: '4px 8px', marginBottom: 4 }}>
+        <button onClick={onBack} style={menuBackButtonStyle}>← Menu</button>
+      </div>
+
       <PlayerArea player={game.players[1 - game.currentTurn]} isOpponent />
 
       <div className="middle">
@@ -1220,9 +1503,6 @@ function App() {
       />
 
       <div className="controls">
-        <button onClick={() => setShowMultiplayer(true)} style={{ background: '#2d8f4e' }}>
-          🌐 Multiplayer
-        </button>
         {!game.turnStarted && <button onClick={startTurn}>Start Turn (Draw)</button>}
         {game.turnStarted && (
           <button onClick={startReorganize} disabled={pendingChoice !== null}>
@@ -1643,7 +1923,7 @@ function WildChoiceModal({ targets, onChoose }: {
         <p className="modal-subtitle">Wild joins an incomplete set.</p>
         <div className="modal-buttons">
           {targets.length === 0 && (
-            <p style={{ color: '#aaa' }}>No incomplete sets — Common Candidate stays loose.</p>
+            <p style={{ color: '#aaa' }}>No incomplete sets — stays loose.</p>
           )}
           {targets.map(t => {
             const sample = getCardById(t.existing[0]);
@@ -1670,7 +1950,7 @@ function CoalitionPickCardModal({ cards, title, onPick, onCancel }: {
         <h2>{title}</h2>
         {cards.length === 0 ? (
           <>
-            <p className="modal-subtitle">No loose Power Cards available to swap.</p>
+            <p className="modal-subtitle">No loose Power Cards available.</p>
             <button className="btn-cancel" onClick={onCancel}>Cancel</button>
           </>
         ) : (
@@ -1692,8 +1972,7 @@ function CoalitionPickCardModal({ cards, title, onPick, onCancel }: {
 }
 
 function WildReorderModal({ player, wildId, onChoose, onCancel }: {
-  player: Player;
-  wildId: string;
+  player: Player; wildId: string;
   onChoose: (destinationSetKey: string | 'loose') => void;
   onCancel: () => void;
 }) {
@@ -1708,16 +1987,13 @@ function WildReorderModal({ player, wildId, onChoose, onCancel }: {
   for (const [key, cards] of Object.entries(groups)) {
     const sample = getCardById(cards[0]);
     const setSize = sample.setSize!;
-    if (cards.length < setSize) {
-      destinations.push({ setKey: key, setSize, existing: cards });
-    }
+    if (cards.length < setSize) destinations.push({ setKey: key, setSize, existing: cards });
   }
-
   return (
     <div className="modal-overlay">
       <div className="modal modal-wide">
         <h2>Move Common Candidate</h2>
-        <p className="modal-subtitle">Choose a destination. Costs 1 play.</p>
+        <p className="modal-subtitle">Costs 1 play.</p>
         <div className="modal-buttons">
           {destinations.map(t => {
             const sample = getCardById(t.existing[0]);
@@ -1728,9 +2004,7 @@ function WildReorderModal({ player, wildId, onChoose, onCancel }: {
               </button>
             );
           })}
-          <button className="btn-fund" onClick={() => onChoose('loose')}>
-            🃏 Keep as Loose
-          </button>
+          <button className="btn-fund" onClick={() => onChoose('loose')}>🃏 Keep as Loose</button>
         </div>
         <button className="btn-cancel" onClick={onCancel}>Cancel</button>
       </div>
@@ -1739,8 +2013,7 @@ function WildReorderModal({ player, wildId, onChoose, onCancel }: {
 }
 
 function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
-  player: Player;
-  playsRemaining: number;
+  player: Player; playsRemaining: number;
   onMoveCard: (cardId: string, target: { kind: 'loose' } | { kind: 'set'; index: number }) => void;
   onClose: () => void;
 }) {
@@ -1751,7 +2024,6 @@ function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
     onMoveCard(selectedCard, { kind: 'loose' });
     setSelectedCard(null);
   }
-
   function handleMoveToSet(idx: number) {
     if (!selectedCard) return;
     onMoveCard(selectedCard, { kind: 'set', index: idx });
@@ -1766,24 +2038,18 @@ function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
       <div className="modal modal-wide">
         <h2>🔧 Reorganize Sets</h2>
         <p className="modal-subtitle">
-          Click a card to select it, then click a destination.
           Wilds cost 1 play · Non-wilds are free. Plays left: {playsRemaining}.
         </p>
 
-        <h3 style={{ marginTop: 12, fontSize: 14, color: '#c9a227' }}>Loose Power Cards</h3>
+        <h3 style={{ marginTop: 12, fontSize: 14, color: '#c9a227' }}>Loose Power</h3>
         <div className="trim-cards">
           {player.powerCards.length === 0 && <p style={{ color: '#666' }}>None</p>}
           {player.powerCards.map(id => {
-            const c = getCardById(id);
             const isSel = selectedCard === id;
             return (
-              <div
-                key={id}
-                className={`mini-card ${isSel ? 'selected' : ''}`}
+              <div key={id} className={`mini-card ${isSel ? 'selected' : ''}`}
                 style={{ outline: isSel ? '3px solid #fff' : undefined }}
-                onClick={() => setSelectedCard(isSel ? null : id)}
-                title={`${c.name}${c.isWild ? ' (Wild — costs 1 play)' : ''}`}
-              >
+                onClick={() => setSelectedCard(isSel ? null : id)}>
                 <MiniCard cardId={id} />
               </div>
             );
@@ -1794,18 +2060,13 @@ function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
         <div className="trim-cards">
           {player.completedSets.length === 0 && <p style={{ color: '#666' }}>None</p>}
           {player.completedSets.map((set, i) => (
-            <div key={i} className="completed-set" style={{ cursor: 'pointer' }}>
+            <div key={i} className="completed-set">
               {set.map(id => {
-                const c = getCardById(id);
                 const isSel = selectedCard === id;
                 return (
-                  <div
-                    key={id}
-                    className={`mini-card ${isSel ? 'selected' : ''}`}
+                  <div key={id} className={`mini-card ${isSel ? 'selected' : ''}`}
                     style={{ outline: isSel ? '3px solid #fff' : undefined }}
-                    onClick={(e) => { e.stopPropagation(); setSelectedCard(isSel ? null : id); }}
-                    title={c.name}
-                  >
+                    onClick={(e) => { e.stopPropagation(); setSelectedCard(isSel ? null : id); }}>
                     <MiniCard cardId={id} />
                   </div>
                 );
@@ -1816,41 +2077,27 @@ function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
 
         {selectedCard && (
           <div style={{
-            marginTop: 20,
-            padding: 12,
-            background: 'rgba(255,255,255,0.06)',
-            borderRadius: 8,
-            textAlign: 'left',
+            marginTop: 20, padding: 12, background: 'rgba(255,255,255,0.06)',
+            borderRadius: 8, textAlign: 'left',
           }}>
             <p style={{ marginBottom: 8 }}>
               <strong>Selected:</strong> {card?.name}{' '}
               {cost > 0
-                ? <span style={{ color: '#e94560' }}>(Wild — costs 1 play)</span>
+                ? <span style={{ color: '#e94560' }}>(Wild — 1 play)</span>
                 : <span style={{ color: '#2d8f4e' }}>(Free)</span>}
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button className="btn-fund" onClick={handleMoveToLoose}>↩ Move to Loose</button>
               {player.completedSets.map((_, i) => (
-                <button
-                  key={i}
-                  className="btn-action"
-                  onClick={() => handleMoveToSet(i)}
-                >
+                <button key={i} className="btn-action" onClick={() => handleMoveToSet(i)}>
                   📦 Move to Set #{i + 1}
                 </button>
               ))}
             </div>
-            {cost > 0 && playsRemaining < cost && (
-              <p style={{ color: '#e94560', marginTop: 8, fontSize: 12 }}>
-                ⚠️ Not enough plays left for this move.
-              </p>
-            )}
           </div>
         )}
 
-        <button className="btn-confirm" onClick={onClose} style={{ marginTop: 20 }}>
-          Done
-        </button>
+        <button className="btn-confirm" onClick={onClose} style={{ marginTop: 20 }}>Done</button>
       </div>
     </div>
   );
@@ -1863,7 +2110,7 @@ function PickPowerCardModal({ target, onPick, onCancel }: {
     <div className="modal-overlay">
       <div className="modal modal-wide">
         <h2>No Confidence Motion</h2>
-        <p className="modal-subtitle">Choose which Power Card to steal from {target.name}.</p>
+        <p className="modal-subtitle">Pick a Power Card to steal from {target.name}.</p>
         {target.powerCards.length === 0 ? (
           <>
             <p style={{ color: '#aaa' }}>No loose Power Cards to steal.</p>
@@ -1893,7 +2140,7 @@ function PickSetModal({ target, onPick, onCancel }: {
     <div className="modal-overlay">
       <div className="modal modal-wide">
         <h2>Cabinet Reshuffle</h2>
-        <p className="modal-subtitle">Choose which complete set to steal from {target.name}.</p>
+        <p className="modal-subtitle">Pick a set to steal from {target.name}.</p>
         {target.completedSets.length === 0 ? (
           <>
             <p style={{ color: '#aaa' }}>No complete sets to steal.</p>
@@ -1924,12 +2171,11 @@ function EpaWindowModal({ epaPlayer, winningPlayer, onPlay, onSkip }: {
       <div className="modal">
         <h2>⚠️ {winningPlayer.name} is about to win!</h2>
         <p className="modal-subtitle">
-          {epaPlayer.name}, you hold Executive Presidency Abolished.
-          Play it to destroy their last set?
+          {epaPlayer.name}, play Executive Presidency Abolished to destroy their last set?
         </p>
         <div className="modal-buttons">
           <button className="btn-action" onClick={onPlay}>
-            ⚡ Play Executive Presidency Abolished
+            ⚡ Play E.P.A.
             <span className="btn-sub">Destroys their winning set</span>
           </button>
         </div>
@@ -1946,24 +2192,19 @@ function EpaReactModal({ winningPlayer, epaPlayer, winningHand, onReact, onAccep
   const reactions: ('father' | 'protest')[] = [];
   if (winningHand.some(id => getCardById(id).effectKey === 'father')) reactions.push('father');
   if (winningHand.some(id => getCardById(id).effectKey === 'protest')) reactions.push('protest');
-
   const labels: Record<string, string> = {
     father: '👨 Do You Know My Father',
     protest: '📢 Public Protest',
   };
-
   return (
     <div className="modal-overlay">
       <div className="modal">
-        <h2>⚠️ {epaPlayer.name} played Executive Presidency Abolished!</h2>
-        <p className="modal-subtitle">
-          {winningPlayer.name}, do you want to react to save your victory?
-        </p>
+        <h2>⚠️ {epaPlayer.name} played E.P.A.!</h2>
+        <p className="modal-subtitle">{winningPlayer.name}, react to save your victory?</p>
         <div className="modal-buttons">
           {reactions.map(k => (
             <button key={k} className="btn-action" onClick={() => onReact(k)}>
               🛡 {labels[k]}
-              <span className="btn-sub">Cancel their card — you still win</span>
             </button>
           ))}
         </div>
@@ -1976,12 +2217,8 @@ function EpaReactModal({ winningPlayer, epaPlayer, winningHand, onReact, onAccep
 function ReactionModal({
   actingPlayer, targetPlayer, actingCardName, availableReactions, onReact, onAccept,
 }: {
-  actingPlayer: Player;
-  targetPlayer: Player;
-  actingCardName: string;
-  availableReactions: string[];
-  onReact: (effectKey: string) => void;
-  onAccept: () => void;
+  actingPlayer: Player; targetPlayer: Player; actingCardName: string;
+  availableReactions: string[]; onReact: (effectKey: string) => void; onAccept: () => void;
 }) {
   const REACT_LABELS: Record<string, string> = {
     mathaka: '🧠 Mathaka Na',
@@ -1993,14 +2230,11 @@ function ReactionModal({
     father: 'Cancels any Action Card',
     protest: 'Cancels any Action Card',
   };
-
   return (
     <div className="modal-overlay">
       <div className="modal">
         <h2>⚠️ {actingPlayer.name} played {actingCardName}</h2>
-        <p className="modal-subtitle">
-          {targetPlayer.name}, do you want to react?
-        </p>
+        <p className="modal-subtitle">{targetPlayer.name}, do you want to react?</p>
         <div className="modal-buttons">
           {availableReactions.map(key => (
             <button key={key} className="btn-action" onClick={() => onReact(key)}>
@@ -2014,5 +2248,28 @@ function ReactionModal({
     </div>
   );
 }
+
+// ============ SHARED STYLES ============
+const menuBackButtonStyle: React.CSSProperties = {
+  background: '#444',
+  color: '#fff',
+  padding: '8px 16px',
+  border: 'none',
+  borderRadius: 8,
+  cursor: 'pointer',
+  fontWeight: 'bold',
+  fontSize: 13,
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  background: '#e94560',
+  color: '#fff',
+  padding: '10px 24px',
+  border: 'none',
+  borderRadius: 8,
+  cursor: 'pointer',
+  fontWeight: 'bold',
+  fontSize: 14,
+};
 
 export default App;
