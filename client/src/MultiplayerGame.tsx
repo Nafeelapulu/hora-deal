@@ -2,8 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Client, Room } from 'colyseus.js';
 import { getCardById } from '../../shared/cards';
 
-const SERVER_URL = 'ws://localhost:2567';
-
+const SERVER_URL = 'wss://hora-deal-server.onrender.com';
 // ============ TYPES ============
 interface ServerPlayer {
   seat: number;
