@@ -293,26 +293,36 @@ function MainMenu({ onNavigate }: { onNavigate: (s: AppScreen) => void }) {
       padding: 20,
       color: '#eee',
     }}>
-      <div style={{ textAlign: 'center', marginBottom: 40 }}>
-        <h1 style={{
-          fontSize: '4rem',
-          margin: 0,
-          color: '#e94560',
-          textShadow: '2px 2px 4px rgba(0,0,0,0.5), 0 0 20px rgba(233,69,96,0.4)',
-          letterSpacing: 2,
-        }}>
-          හොර DEAL
-        </h1>
+            <div style={{ textAlign: 'center', marginBottom: 40, padding: '0 16px', width: '100%', maxWidth: 600 }}>
+        <img
+          src="/cards/logo.png"
+          alt="හොර DEAL"
+          style={{
+            width: 'clamp(200px, 55vw, 360px)',
+            height: 'auto',
+            marginBottom: '16px',
+            filter: 'drop-shadow(0 6px 24px rgba(233,69,96,0.5))',
+            display: 'block',
+            marginLeft: 'auto',
+            marginRight: 'auto',
+          }}
+        />
         <p style={{
-          fontSize: '1.2rem',
+          fontSize: 'clamp(1rem, 3vw, 1.2rem)',
           color: '#c9a227',
-          margin: '8px 0 0 0',
+          margin: '0 0 8px 0',
           fontWeight: 'bold',
           letterSpacing: 1,
+          lineHeight: 1.4,
         }}>
           A Political Satire Card Game
         </p>
-        <p style={{ fontSize: '0.9rem', color: '#888', margin: '8px 0 0 0' }}>
+        <p style={{
+          fontSize: 'clamp(0.8rem, 2.5vw, 0.9rem)',
+          color: '#888',
+          margin: 0,
+          lineHeight: 1.4,
+        }}>
           Rise from Regular Hora to President
         </p>
       </div>
