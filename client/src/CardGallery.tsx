@@ -1,9 +1,9 @@
-import { ALL_CARDS } from '@shared/cards';
+import { ALL_CARDS } from '../../shared/cards';
 
 export default function CardGallery() {
-  const money = ALL_CARDS.filter(c => c.type === 'MONEY');
-  const power = ALL_CARDS.filter(c => c.type === 'POWER');
-  const action = ALL_CARDS.filter(c => c.type === 'ACTION');
+  const money = ALL_CARDS.filter((c) => c.type === 'MONEY');
+  const power = ALL_CARDS.filter((c) => c.type === 'POWER');
+  const action = ALL_CARDS.filter((c) => c.type === 'ACTION');
 
   return (
     <div style={{ padding: 20, maxWidth: 1200, margin: '0 auto' }}>
@@ -14,17 +14,17 @@ export default function CardGallery() {
 
       <h2 style={{ marginTop: 30, marginBottom: 10 }}>💰 Money Cards ({money.length})</h2>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {money.map(c => <CardImage key={c.id} cardId={c.id} />)}
+        {money.map((c) => <CardImage key={c.id} cardId={c.id} />)}
       </div>
 
       <h2 style={{ marginTop: 30, marginBottom: 10 }}>👑 Power Cards ({power.length})</h2>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {power.map(c => <CardImage key={c.id} cardId={c.id} />)}
+        {power.map((c) => <CardImage key={c.id} cardId={c.id} />)}
       </div>
 
       <h2 style={{ marginTop: 30, marginBottom: 10 }}>⚡ Action Cards ({action.length})</h2>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {action.map(c => <CardImage key={c.id} cardId={c.id} />)}
+        {action.map((c) => <CardImage key={c.id} cardId={c.id} />)}
       </div>
     </div>
   );
