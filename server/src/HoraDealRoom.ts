@@ -12,9 +12,17 @@ export class HoraDealRoom extends Room {
   private game: Engine.GameState | null = null;
   private sessionToSeat: Map<string, number> = new Map();
 
+  // Host management
+  private hostSeat: number = 0;
+  private isLocked: boolean = false;
+
   onAuth(client: Client, options: any) {
     console.log('🔐 onAuth called');
     console.log('   sessionId:', client.sessionId);
+    if (this.isLocked && this.clients.length > 0) {
+      console.log('🚫 Rejected: room is locked');
+      throw new Error('Room is locked');
+    }
     return true;
   }
 
@@ -22,6 +30,38 @@ export class HoraDealRoom extends Room {
     console.log('🎮 onCreate — START');
     console.log('   roomId:', this.roomId);
     console.log('   options:', JSON.stringify(options));
+
+    // Host: kick a player
+    this.onMessage('kick_player', (client, message: { targetSeat: number }) => {
+      const mySeat = this.sessionToSeat.get(client.sessionId);
+      if (mySeat !== this.hostSeat) {
+        client.send('error', { message: 'Only the host can kick players' });
+        return;
+      }
+      const targetSeat = message.targetSeat;
+      if (targetSeat === this.hostSeat) {
+        client.send('error', { message: 'Cannot kick yourself' });
+        return;
+      }
+      const targetClient = this.clients.find(c => this.sessionToSeat.get(c.sessionId) === targetSeat);
+      if (targetClient) {
+        console.log(`👢 Host kicking seat ${targetSeat}`);
+        targetClient.send('kicked', { reason: 'Removed by host' });
+        setTimeout(() => targetClient.leave(4000), 100);
+      }
+    });
+
+    // Host: toggle room lock
+    this.onMessage('toggle_lock', (client) => {
+      const mySeat = this.sessionToSeat.get(client.sessionId);
+      if (mySeat !== this.hostSeat) {
+        client.send('error', { message: 'Only the host can lock the room' });
+        return;
+      }
+      this.isLocked = !this.isLocked;
+      console.log(`🔒 Room lock: ${this.isLocked}`);
+      this.broadcast('room_lock_changed', { isLocked: this.isLocked });
+    });
 
     this.onMessage('set_name', (client, message) => {
       const name = message?.name || 'Player';
@@ -31,7 +71,10 @@ export class HoraDealRoom extends Room {
       this.broadcast('player_joined', {
         sessionId: client.sessionId,
         seat,
+        name,
         totalPlayers: this.clients.length,
+        hostSeat: this.hostSeat,
+        isLocked: this.isLocked,
       });
     });
 
@@ -207,10 +250,6 @@ export class HoraDealRoom extends Room {
 
   onJoin(client: Client, options: PlayerJoinOptions) {
     console.log('🚀 onJoin — START');
-    console.log('   sessionId:', client.sessionId);
-    console.log('   options:', JSON.stringify(options));
-    console.log('   clients count:', this.clients.length);
-
     const seat = this.clients.length - 1;
     this.sessionToSeat.set(client.sessionId, seat);
 
@@ -219,17 +258,28 @@ export class HoraDealRoom extends Room {
 
     console.log(`👤 ${client.sessionId} joined as seat ${seat}, name: ${name}`);
 
+    // First player to join becomes host
+    if (seat === 0) {
+      this.hostSeat = 0;
+      console.log(`👑 Seat 0 is the host`);
+    }
+
     this.broadcast('player_joined', {
       sessionId: client.sessionId,
       seat,
+      name,
       totalPlayers: this.clients.length,
+      hostSeat: this.hostSeat,
+      isLocked: this.isLocked,
     });
 
     console.log('✅ onJoin — COMPLETE');
   }
 
-  onLeave(client: Client, consented?: boolean) {    const seat = this.sessionToSeat.get(client.sessionId);
-console.log(`👋 ${client.sessionId} (seat ${seat}) left, consented: ${consented}`);    this.sessionToSeat.delete(client.sessionId);
+  onLeave(client: Client, consented?: boolean) {
+    const seat = this.sessionToSeat.get(client.sessionId);
+    console.log(`👋 ${client.sessionId} (seat ${seat}) left, consented: ${consented}`);
+    this.sessionToSeat.delete(client.sessionId);
 
     if (this.game && seat !== undefined) {
       this.game.players[seat].isConnected = false;

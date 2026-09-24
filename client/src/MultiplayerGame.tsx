@@ -2,18 +2,19 @@ import { useState, useEffect, useRef } from 'react';
 import { Client, Room } from 'colyseus.js';
 import { getCardById } from '../../shared/cards';
 
-const SERVER_URL = 'wss://hora-deal-server.onrender.com';
+// 🔁 CHANGE THIS TO wss://hora-deal-server.onrender.com WHEN DEPLOYED
+const SERVER_URL = 'ws://localhost:2567';
 
 // ============ COLOR PALETTE ============
 const C = {
-  navyDeep: '#0A0A0A',      // pure black
-  navyMid: '#141414',       // soft black
-  black: '#0A0A0A',         // black
-  charcoal: '#2E2E2E',      // grey dark
-  grey: '#4A4A4A',          // grey mid
-  greyLight: '#C0C0C0',     // silver
-  greenMuted: '#8A8A8A',    // grey light
-  white: '#E8E8E8',         // white silver
+  navyDeep: '#0A0A0A',
+  navyMid: '#141414',
+  black: '#0A0A0A',
+  charcoal: '#2E2E2E',
+  grey: '#4A4A4A',
+  greyLight: '#C0C0C0',
+  greenMuted: '#8A8A8A',
+  white: '#E8E8E8',
 };
 
 // ============ TYPES ============
@@ -58,6 +59,10 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
   const [status, setStatus] = useState('Not connected');
   const [gameState, setGameState] = useState<ServerGameState | null>(null);
   const [connectedPlayers, setConnectedPlayers] = useState<any[]>([]);
+  const [hostSeat, setHostSeat] = useState<number>(0);
+  const [isLocked, setIsLocked] = useState<boolean>(false);
+  const [mySeat, setMySeat] = useState<number>(-1);
+  const [kickedMsg, setKickedMsg] = useState<string>('');
 
   const clientRef = useRef<Client | null>(null);
   const roomRef = useRef<Room | null>(null);
@@ -87,6 +92,8 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
       roomRef.current = room;
       setRoomCode(room.roomId);
       setStatus(`Room created`);
+      setMySeat(0);
+      setHostSeat(0);
       wireRoomEvents(room);
       room.send('set_name', { name: playerName });
       setScreen('waiting');
@@ -103,6 +110,7 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
       const room = await client.joinById(roomCode);
       roomRef.current = room;
       setStatus(`Joined room`);
+      setMySeat(-1);
       wireRoomEvents(room);
       room.send('set_name', { name: playerName });
       setScreen('waiting');
@@ -114,11 +122,33 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
   function wireRoomEvents(room: Room) {
     room.onMessage('state', (state: ServerGameState) => {
       setGameState(state);
+      if (state?.viewerSeat !== undefined) {
+        setMySeat(state.viewerSeat);
+      }
       if (state?.phase === 'playing') setScreen('game');
     });
     room.onMessage('game_started', () => setScreen('game'));
     room.onMessage('player_joined', (msg: any) => {
-      setConnectedPlayers(prev => prev.some(p => p.sessionId === msg.sessionId) ? prev : [...prev, msg]);
+      setConnectedPlayers(prev => {
+        const withoutDup = prev.filter(p => p.sessionId !== msg.sessionId);
+        return [...withoutDup, msg];
+      });
+      if (typeof msg.hostSeat === 'number') setHostSeat(msg.hostSeat);
+      if (typeof msg.isLocked === 'boolean') setIsLocked(msg.isLocked);
+
+      // 🔑 KEY FIX: match my sessionId to identify my seat
+      if (msg.sessionId === room.sessionId) {
+        setMySeat(msg.seat);
+      }
+    });
+    room.onMessage('room_lock_changed', (msg: any) => {
+      setIsLocked(msg.isLocked);
+    });
+    room.onMessage('kicked', (msg: any) => {
+      setKickedMsg(msg.reason || 'You were removed from the room');
+      setTimeout(() => {
+        roomRef.current?.leave();
+      }, 500);
     });
     room.onMessage('player_left', (msg: any) => {
       setConnectedPlayers(prev => prev.filter(p => p.sessionId !== msg.sessionId));
@@ -129,6 +159,10 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
       roomRef.current = null;
       setGameState(null);
       setScreen('lobby');
+      setHostSeat(0);
+      setMySeat(-1);
+      setIsLocked(false);
+      setConnectedPlayers([]);
     });
   }
 
@@ -139,6 +173,9 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
     setConnectedPlayers([]);
     setScreen('lobby');
     setRoomCode('');
+    setHostSeat(0);
+    setMySeat(-1);
+    setIsLocked(false);
   }
 
   function handleBack() {
@@ -163,6 +200,22 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
         />
         <div style={{ width: 80 }} />
       </div>
+
+      {kickedMsg && (
+        <div style={{
+          background: C.charcoal,
+          border: `1px solid ${C.greyLight}`,
+          color: C.white,
+          padding: 12,
+          borderRadius: 8,
+          marginBottom: 16,
+          maxWidth: 500,
+          margin: '0 auto 16px auto',
+          textAlign: 'center',
+        }}>
+          🚪 {kickedMsg}
+        </div>
+      )}
 
       {error && (
         <div style={errorStyle}>
@@ -214,20 +267,115 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
           <h3>3. Waiting for Players</h3>
           <p style={{ fontSize: 18 }}>Room Code: <strong style={{ color: C.white }}>{roomCode}</strong></p>
           <p style={{ color: C.greyLight }}>Share this code with your friends.</p>
-          <p style={{ marginTop: 20 }}>Connected: {connectedPlayers.length || 1} player(s)</p>
-          <ul style={{ paddingLeft: 20 }}>
-            {connectedPlayers.map((p, i) => (
-              <li key={i}>Seat {p.seat + 1}: {p.name || 'Unnamed'}</li>
-            ))}
-            {connectedPlayers.length === 0 && <li>You are in the room. Waiting for others...</li>}
+          {isLocked && (
+            <p style={{ color: C.greyLight, fontSize: 13 }}>
+              🔒 Room is locked — no new joins until unlocked
+            </p>
+          )}
+
+          <p style={{ marginTop: 20 }}>
+            Connected: {connectedPlayers.length || 1} player(s)
+          </p>
+          <ul style={{ paddingLeft: 0, listStyle: 'none', marginTop: 8 }}>
+            {connectedPlayers.map((p, i) => {
+              const isHost = p.seat === hostSeat;
+              const isMe = p.seat === mySeat;
+              return (
+                <li key={i} style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '8px 12px',
+                  marginBottom: 4,
+                  background: isHost ? C.charcoal : C.black,
+                  border: `1px solid ${C.grey}`,
+                  borderRadius: 6,
+                }}>
+                  <span>
+                    {isHost && '👑 '}
+                    Seat {p.seat + 1}: {p.name || 'Unnamed'}
+                    {isMe && ' (you)'}
+                  </span>
+                  {mySeat === hostSeat && !isHost && (
+                    <button
+                      onClick={() => {
+                        console.log('🥾 Kicking seat', p.seat);
+                        roomRef.current?.send('kick_player', { targetSeat: p.seat });
+                      }}
+                      style={{
+                        background: 'transparent',
+                        color: C.greyLight,
+                        border: `1px solid ${C.grey}`,
+                        padding: '4px 10px',
+                        fontSize: 11,
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Kick
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+            {connectedPlayers.length === 0 && (
+              <li style={{
+                padding: '8px 12px',
+                background: C.black,
+                border: `1px solid ${C.grey}`,
+                borderRadius: 6,
+                color: C.greyLight,
+                fontSize: 13,
+              }}>
+                You are in the room. Waiting for others...
+              </li>
+            )}
           </ul>
+
+          {mySeat === hostSeat && (
+            <div style={{
+              marginTop: 16,
+              padding: 12,
+              background: C.black,
+              border: `1px solid ${C.grey}`,
+              borderRadius: 8,
+              textAlign: 'left',
+            }}>
+              <p style={{ fontSize: 12, color: C.greyLight, marginBottom: 8 }}>
+                👑 HOST CONTROLS
+              </p>
+              <button
+                onClick={() => roomRef.current?.send('toggle_lock', {})}
+                style={{
+                  ...secondaryButtonStyle,
+                  width: '100%',
+                }}
+              >
+                {isLocked ? '🔓 Unlock Room' : '🔒 Lock Room'}
+              </button>
+            </div>
+          )}
+
           <button
             onClick={() => roomRef.current?.send('start_game', {})}
-            style={{ ...primaryButtonStyle, marginTop: 20 }}
+            style={{
+              ...primaryButtonStyle,
+              marginTop: 20,
+              width: '100%',
+              display: mySeat === hostSeat ? 'block' : 'none',
+            }}
           >
             Start Game
           </button>
-          <button onClick={disconnect} style={{ ...secondaryButtonStyle, marginTop: 12 }}>Leave Room</button>
+          {mySeat !== hostSeat && (
+            <p style={{ color: C.greyLight, fontSize: 13, marginTop: 20 }}>
+              Waiting for the host to start the game...
+            </p>
+          )}
+
+          <button onClick={disconnect} style={{ ...secondaryButtonStyle, marginTop: 12, width: '100%' }}>
+            Leave Room
+          </button>
         </div>
       )}
 
