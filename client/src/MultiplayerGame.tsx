@@ -3,8 +3,7 @@ import { Client, Room } from 'colyseus.js';
 import { getCardById } from '../../shared/cards';
 
 // 🔁 CHANGE THIS TO wss://hora-deal-server.onrender.com WHEN DEPLOYED
-const SERVER_URL = 'ws://localhost:2567';
-
+const SERVER_URL = 'wss://hora-deal.onrender.com';
 // ============ COLOR PALETTE ============
 const C = {
   navyDeep: '#0A0A0A',
