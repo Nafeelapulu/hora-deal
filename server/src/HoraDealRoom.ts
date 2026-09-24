@@ -11,6 +11,18 @@ interface PlayerJoinOptions {
 // This allows players to look up rooms by their display code
 const CODE_REGISTRY: Map<string, string> = new Map();
 
+// ============ CODE REGISTRY HELPERS ============
+// These let the HTTP endpoint in index.ts look up room IDs by code
+
+export function getRoomIdByCode(code: string): string | null {
+  const upper = code.trim().toUpperCase();
+  return CODE_REGISTRY.get(upper) || null;
+}
+
+export function getAllActiveCodes(): string[] {
+  return Array.from(CODE_REGISTRY.keys());
+}
+
 export class HoraDealRoom extends Room {
   maxClients = 5;
 

@@ -3,9 +3,7 @@ import { Client, Room } from 'colyseus.js';
 import { getCardById } from '../../shared/cards';
 
 // 🔁 DEPLOYED SERVER — change to 'ws://localhost:2567' for local testing
-const SERVER_URL = 'wss://hora-deal.onrender.com';
-
-// ============ COLOR PALETTE ============
+const SERVER_URL = 'wss://hora-deal.onrender.com';// ============ COLOR PALETTE ============
 const C = {
   navyDeep: '#0A0A0A',
   navyMid: '#141414',
@@ -123,7 +121,30 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
     setJoining(true);
     setError('');
     try {
-      const room = await client.joinById(code, { name: playerName });
+      // 🔑 Step 1: Look up the real Colyseus roomId for this custom code
+      const httpBase = SERVER_URL
+        .replace('wss://', 'https://')
+        .replace('ws://', 'http://');
+      const lookupUrl = `${httpBase}/lookup?code=${encodeURIComponent(code)}`;
+      console.log('🔍 Looking up room:', lookupUrl);
+
+      const response = await fetch(lookupUrl);
+      if (!response.ok) {
+        if (response.status === 404) {
+          setError(`Room "${code}" not found`);
+          setJoining(false);
+          return;
+        }
+        setError(`Lookup failed: ${response.status}`);
+        setJoining(false);
+        return;
+      }
+      const data = await response.json();
+      const realRoomId = data.roomId;
+      console.log('✅ Found real roomId:', realRoomId);
+
+      // 🔑 Step 2: Join using the real roomId
+      const room = await client.joinById(realRoomId, { name: playerName });
       roomRef.current = room;
       setRoomCode(code);
       setStatus(`Joined room: ${code}`);
