@@ -4,7 +4,12 @@ import { getCardById } from '../../shared/cards';
 
 interface PlayerJoinOptions {
   name?: string;
+  customCode?: string;
 }
+
+// Global registry of room codes → room IDs
+// This allows players to look up rooms by their display code
+const CODE_REGISTRY: Map<string, string> = new Map();
 
 export class HoraDealRoom extends Room {
   maxClients = 5;
@@ -14,7 +19,8 @@ export class HoraDealRoom extends Room {
 
   // Host management
   private hostSeat: number = 0;
-  private isLocked: boolean = false;
+  private isLocked: boolean = true;   // 🔒 LOCKED BY DEFAULT
+  private displayCode: string = '';   // Custom code like "HORA"
 
   onAuth(client: Client, options: any) {
     console.log('🔐 onAuth called');
@@ -31,7 +37,26 @@ export class HoraDealRoom extends Room {
     console.log('   roomId:', this.roomId);
     console.log('   options:', JSON.stringify(options));
 
-    // Host: kick a player
+    // Handle custom room code
+    const requestedCode = (options?.customCode || '').trim().toUpperCase();
+    if (requestedCode) {
+      if (CODE_REGISTRY.has(requestedCode)) {
+        console.log(`❌ Code ${requestedCode} already taken`);
+        throw new Error(`Code "${requestedCode}" is already taken`);
+      }
+      this.displayCode = requestedCode;
+      CODE_REGISTRY.set(requestedCode, this.roomId);
+      console.log(`✅ Room code set to: ${requestedCode}`);
+    } else {
+      // Fallback: use auto-generated room ID as display code
+      this.displayCode = this.roomId;
+      CODE_REGISTRY.set(this.displayCode, this.roomId);
+    }
+
+    // Send the code back to the host immediately
+    this.broadcast('room_code_set', { displayCode: this.displayCode });
+
+    // ============ HOST MESSAGES ============
     this.onMessage('kick_player', (client, message: { targetSeat: number }) => {
       const mySeat = this.sessionToSeat.get(client.sessionId);
       if (mySeat !== this.hostSeat) {
@@ -51,7 +76,6 @@ export class HoraDealRoom extends Room {
       }
     });
 
-    // Host: toggle room lock
     this.onMessage('toggle_lock', (client) => {
       const mySeat = this.sessionToSeat.get(client.sessionId);
       if (mySeat !== this.hostSeat) {
@@ -63,6 +87,7 @@ export class HoraDealRoom extends Room {
       this.broadcast('room_lock_changed', { isLocked: this.isLocked });
     });
 
+    // ============ SETUP MESSAGES ============
     this.onMessage('set_name', (client, message) => {
       const name = message?.name || 'Player';
       (client as any).userData = { name };
@@ -81,7 +106,7 @@ export class HoraDealRoom extends Room {
     this.onMessage('start_game', (client) => {
       const seat = this.sessionToSeat.get(client.sessionId);
       if (seat === undefined) return;
-      if (seat !== 0) {
+      if (seat !== this.hostSeat) {
         client.send('error', { message: 'Only the host can start the game' });
         return;
       }
@@ -108,6 +133,7 @@ export class HoraDealRoom extends Room {
       this.broadcast('game_started', { seats: names.length });
     });
 
+    // ============ GAME ACTIONS ============
     this.onMessage('start_turn', (client) => {
       this.handleAction(client, () => {
         if (!this.game) return { state: null as any, ok: false, error: 'No game', log: [] };
@@ -258,7 +284,6 @@ export class HoraDealRoom extends Room {
 
     console.log(`👤 ${client.sessionId} joined as seat ${seat}, name: ${name}`);
 
-    // First player to join becomes host
     if (seat === 0) {
       this.hostSeat = 0;
       console.log(`👑 Seat 0 is the host`);
@@ -270,6 +295,12 @@ export class HoraDealRoom extends Room {
       name,
       totalPlayers: this.clients.length,
       hostSeat: this.hostSeat,
+      isLocked: this.isLocked,
+    });
+
+    // Also send the display code + lock status to the new joiner
+    client.send('room_code_set', {
+      displayCode: this.displayCode,
       isLocked: this.isLocked,
     });
 
@@ -294,6 +325,11 @@ export class HoraDealRoom extends Room {
 
   onDispose() {
     console.log('🗑 Room disposing:', this.roomId);
+    // Remove the code from the registry so it can be reused
+    if (this.displayCode && CODE_REGISTRY.get(this.displayCode) === this.roomId) {
+      CODE_REGISTRY.delete(this.displayCode);
+      console.log(`🔓 Code ${this.displayCode} freed`);
+    }
   }
 
   private getSeat(client: Client): number {
