@@ -1,12 +1,24 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+:root {
+  --black: #0A0A0A;
+  --black-soft: #141414;
+  --charcoal: #1E1E1E;
+  --grey-dark: #2E2E2E;
+  --grey-mid: #4A4A4A;
+  --grey-light: #8A8A8A;
+  --silver: #C0C0C0;
+  --white-silver: #E8E8E8;
+}
+
 body {
   font-family: system-ui, -apple-system, sans-serif;
-  background: #1a1a2e;
-  color: #eee;
+  background: var(--black);
+  color: var(--white-silver);
   min-height: 100vh;
 }
 
+/* ============ GAME BOARD ============ */
 .game-board {
   display: flex;
   flex-direction: column;
@@ -17,17 +29,17 @@ body {
 
 /* ============ PLAYER AREAS ============ */
 .player-area {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--black-soft);
+  border: 1px solid var(--grey-dark);
   border-radius: 12px;
   padding: 10px;
-  border: 2px solid transparent;
 }
 .player-area.current {
-  border-color: #e94560;
-  background: rgba(233, 69, 96, 0.08);
+  border: 2px solid var(--silver);
+  background: var(--charcoal);
 }
 .player-area.opponent {
-  opacity: 0.85;
+  opacity: 0.94;
 }
 
 .player-header {
@@ -37,22 +49,25 @@ body {
   margin-bottom: 8px;
   font-size: 14px;
   flex-wrap: wrap;
+  color: var(--white-silver);
 }
 .rank-badge {
-  background: #c9a227;
-  color: #000;
-  padding: 2px 8px;
+  background: var(--charcoal);
+  color: var(--white-silver);
+  padding: 2px 10px;
   border-radius: 10px;
   font-weight: bold;
   font-size: 12px;
+  border: 1px solid var(--grey-mid);
 }
 .skip-badge {
-  background: #c73650;
-  color: white;
+  background: var(--charcoal);
+  color: var(--white-silver);
   padding: 2px 8px;
   border-radius: 10px;
   font-size: 11px;
   font-weight: bold;
+  border: 1px solid var(--grey-mid);
 }
 
 /* ============ CARD ROWS ============ */
@@ -68,38 +83,41 @@ body {
   display: flex;
   gap: 3px;
   padding: 6px;
-  background: rgba(201, 162, 39, 0.2);
+  background: var(--charcoal);
   border-radius: 8px;
-  border: 2px solid #c9a227;
+  border: 2px solid var(--grey-mid);
 }
 
 /* ============ MINI CARD ============ */
 .mini-card {
   width: 80px;
   height: 112px;
-  min-width: 80px;      /* ← KEY: prevents stretching */
-  max-width: 80px;      /* ← KEY: prevents stretching */
+  min-width: 80px;
+  max-width: 80px;
   border-radius: 8px;
-  padding: 5px;
+  padding: 0;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   font-size: 10px;
-  color: white;
+  color: var(--white-silver);
   cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s;
   text-align: center;
   user-select: none;
-  border: 2px solid rgba(0,0,0,0.3);
+  border: 2px solid rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  position: relative;
+  background: transparent;
 }
 .mini-card:hover {
   transform: translateY(-8px);
-  box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.8);
 }
 .mini-card.selected {
   transform: translateY(-16px);
-  border-color: #fff;
-  box-shadow: 0 0 0 3px #fff, 0 8px 16px rgba(0,0,0,0.5);
+  border-color: var(--white-silver);
+  box-shadow: 0 0 0 3px var(--white-silver), 0 8px 16px rgba(0, 0, 0, 0.6);
 }
 .mini-card.small {
   width: 55px;
@@ -107,6 +125,13 @@ body {
   min-width: 55px;
   max-width: 55px;
   font-size: 8px;
+}
+.card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
 }
 .card-type {
   font-size: 8px;
@@ -133,13 +158,16 @@ body {
   min-width: 80px;
   max-width: 80px;
   border-radius: 8px;
-  background: #f5f0e8;
-  border: 2px solid #333;
+  background: var(--black-soft);
+  border: 2px solid var(--grey-mid);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: transform 0.15s;
+  overflow: hidden;
+  position: relative;
+  padding: 0;
 }
 .card-back:hover { transform: translateY(-4px); }
 .card-back.small {
@@ -148,9 +176,15 @@ body {
   min-width: 55px;
   max-width: 55px;
 }
+.card-back .card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+}
 .card-back-logo {
   font-weight: bold;
-  color: #1a1a2e;
+  color: var(--white-silver);
   text-align: center;
   font-size: 12px;
   line-height: 1.2;
@@ -162,18 +196,20 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 8px 16px;
-  background: rgba(0,0,0,0.3);
+  background: var(--black-soft);
+  border: 1px solid var(--grey-dark);
   border-radius: 10px;
   font-size: 14px;
   gap: 16px;
+  flex-wrap: wrap;
 }
 .pile-info {
   font-size: 12px;
-  opacity: 0.8;
+  color: var(--silver);
 }
 .turn-indicator {
   font-weight: bold;
-  color: #e94560;
+  color: var(--white-silver);
   font-size: 16px;
 }
 
@@ -186,31 +222,39 @@ body {
   flex-wrap: wrap;
 }
 .controls button {
-  background: #e94560;
-  color: white;
-  border: none;
+  background: var(--black-soft);
+  color: var(--white-silver);
+  border: 1px solid var(--grey-mid);
   padding: 10px 24px;
   font-size: 14px;
   border-radius: 8px;
   cursor: pointer;
   font-weight: bold;
+  transition: background 0.15s, border 0.15s, color 0.15s;
 }
-.controls button:hover { background: #c73650; }
+.controls button:hover {
+  background: var(--charcoal);
+  border-color: var(--silver);
+  color: var(--white-silver);
+}
 .controls button:disabled {
-  background: #555;
+  background: var(--black-soft);
+  color: var(--grey-mid);
   cursor: not-allowed;
+  border-color: var(--grey-dark);
 }
-.controls button.secondary { background: #444; }
-.controls button.secondary:hover { background: #555; }
+.controls button.secondary { background: var(--charcoal); }
+.controls button.secondary:hover { background: var(--grey-dark); }
 
 /* ============ LOG ============ */
 .log {
-  background: rgba(0,0,0,0.4);
+  background: var(--black-soft);
+  border: 1px solid var(--grey-dark);
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 12px;
   font-family: monospace;
-  color: #aaa;
+  color: var(--silver);
   max-height: 100px;
   overflow-y: auto;
 }
@@ -227,26 +271,27 @@ body {
   padding: 20px;
   text-align: center;
 }
-.app h1 { font-size: 2rem; }
+.app h1 { font-size: 2rem; color: var(--white-silver); }
 .app button {
-  background: #e94560;
-  color: white;
-  border: none;
+  background: var(--black-soft);
+  color: var(--white-silver);
+  border: 1px solid var(--grey-mid);
   padding: 12px 32px;
   font-size: 16px;
   border-radius: 8px;
   cursor: pointer;
   font-weight: bold;
 }
+.app button:hover {
+  background: var(--charcoal);
+  border-color: var(--silver);
+}
 
 /* ============ MODALS ============ */
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.75);
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.88);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -255,28 +300,27 @@ body {
 }
 
 .modal {
-  background: #252547;
-  border: 2px solid #e94560;
+  background: var(--black-soft);
+  border: 2px solid var(--grey-mid);
   border-radius: 16px;
   padding: 28px;
   max-width: 500px;
   width: 100%;
   text-align: center;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+  color: var(--white-silver);
 }
 
-.modal-wide {
-  max-width: 900px;
-}
+.modal-wide { max-width: 900px; }
 
 .modal h2 {
   font-size: 1.6rem;
   margin-bottom: 8px;
-  color: #e94560;
+  color: var(--white-silver);
 }
 
 .modal-subtitle {
-  color: #aaa;
+  color: var(--silver);
   font-size: 0.95rem;
   margin-bottom: 20px;
 }
@@ -298,51 +342,73 @@ body {
   border-radius: 10px;
   min-width: 180px;
   cursor: pointer;
-  border: none;
-  color: white;
+  border: 1px solid var(--grey-mid);
+  color: var(--white-silver);
   font-weight: bold;
+  background: var(--charcoal);
+  transition: background 0.15s, border-color 0.15s;
+}
+.modal-buttons button:hover {
+  background: var(--grey-dark);
+  border-color: var(--silver);
 }
 
-.btn-fund { background: #2d8f4e; }
-.btn-fund:hover { background: #236f3d; }
+.btn-fund {
+  background: var(--charcoal) !important;
+}
+.btn-fund:hover {
+  background: var(--grey-dark) !important;
+}
 
-.btn-action { background: #c9a227; color: #000; }
-.btn-action:hover { background: #b08f20; }
+.btn-action {
+  background: var(--charcoal) !important;
+  color: var(--white-silver) !important;
+}
+.btn-action:hover {
+  background: var(--grey-dark) !important;
+}
 
 .btn-sub {
   font-size: 0.75rem;
-  opacity: 0.85;
+  opacity: 0.9;
   font-weight: normal;
 }
 
 .btn-cancel {
   background: transparent;
-  color: #aaa;
-  border: 1px solid #444;
+  color: var(--silver);
+  border: 1px solid var(--grey-dark);
   padding: 8px 20px;
   font-size: 0.9rem;
   cursor: pointer;
   border-radius: 6px;
 }
 .btn-cancel:hover {
-  background: #333;
-  color: #fff;
+  background: var(--charcoal);
+  color: var(--white-silver);
+  border-color: var(--silver);
 }
 
 .btn-confirm {
-  background: #e94560;
+  background: var(--charcoal);
   padding: 12px 32px;
   font-size: 1rem;
   border-radius: 8px;
   margin-top: 20px;
   font-weight: bold;
-  color: white;
-  border: none;
+  color: var(--white-silver);
+  border: 1px solid var(--grey-mid);
   cursor: pointer;
 }
+.btn-confirm:hover {
+  background: var(--grey-dark);
+  border-color: var(--silver);
+}
 .btn-confirm:disabled {
-  background: #666;
+  background: var(--black-soft);
+  color: var(--grey-mid);
   cursor: not-allowed;
+  border-color: var(--grey-dark);
 }
 
 .trim-cards {
@@ -353,158 +419,71 @@ body {
   max-height: 400px;
   overflow-y: auto;
   padding: 10px;
-}/* ============ DISCARD PILE ============ */
+}
+
+/* ============ CENTRAL BANK PILE ============ */
+.bank-pile {
+  background: var(--charcoal);
+  border: 2px solid var(--grey-mid);
+}
+.bank-pile .discard-label {
+  color: var(--silver);
+}
+
+/* ============ DISCARD PILE ============ */
 .discard-pile {
-  background: rgba(199, 54, 80, 0.15);
-  border: 2px solid #c73650;
+  background: var(--black-soft);
+  border: 2px solid var(--grey-dark);
   border-radius: 12px;
   padding: 10px;
   margin: 8px 0;
 }
-
 .discard-label {
   font-size: 12px;
   font-weight: bold;
-  color: #c73650;
+  color: var(--silver);
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-
 .discard-cards {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
 }
 
-/* Dim hand when player can't play */
 .hand-row.disabled .mini-card {
   cursor: not-allowed;
-  filter: grayscale(0.6);
-  opacity: 0.6;
+  filter: grayscale(0.5) opacity(0.5);
 }
 .hand-row.disabled .mini-card:hover {
   transform: none;
   box-shadow: none;
-}/* ============ CENTRAL BANK PILE ============ */
-.bank-pile {
-  background: rgba(201, 162, 39, 0.15);
-  border: 2px solid #c9a227;
 }
 
-.bank-pile .discard-label {
-  color: #c9a227;
-}/* ============ WILD CARD REORDER ============ */
+/* ============ WILD CARD REORDER ============ */
 .mini-card.wild-clickable {
   cursor: pointer;
-  box-shadow: 0 0 0 2px #ff79c6;
+  box-shadow: 0 0 0 2px var(--white-silver);
   transition: all 0.15s;
 }
 .mini-card.wild-clickable:hover {
   transform: translateY(-8px);
-  box-shadow: 0 0 0 3px #ff79c6, 0 8px 20px rgba(255, 121, 198, 0.6);
-}/* ============ CARD IMAGES ============ */
-.mini-card {
-  padding: 0;
-  background: transparent;
-  overflow: hidden;
-  position: relative;
+  box-shadow: 0 0 0 3px var(--white-silver), 0 8px 20px rgba(232, 232, 232, 0.35);
 }
 
-.card-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 6px;
-  display: block;
-}
-
-.card-back {
-  overflow: hidden;
-  position: relative;
-  padding: 0;
-}
-
-.card-back .card-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 6px;
-}
-
-.fallback-text {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 5px;
-  font-size: 10px;
-  color: white;
-  text-align: center;
-}
-
-.fallback-text .card-type {
-  font-size: 8px;
-  opacity: 0.8;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.fallback-text .card-name {
-  font-weight: bold;
-  line-height: 1.1;
-  font-size: 10px;
-  word-break: break-word;
-}
-
-.fallback-text .card-value {
-  font-size: 11px;
-  font-weight: bold;
-  text-align: right;
-}
-
-.card-back-logo {
-  font-weight: bold;
-  color: #1a1a2e;
-  text-align: center;
-  font-size: 12px;
-  line-height: 1.2;
-}
-
-/* Ensure wild click glow still works with images */
-.mini-card.wild-clickable {
-  cursor: pointer;
-  box-shadow: 0 0 0 2px #ff79c6;
-  transition: all 0.15s;
-}
-.mini-card.wild-clickable:hover {
-  transform: translateY(-8px);
-  box-shadow: 0 0 0 3px #ff79c6, 0 8px 20px rgba(255, 121, 198, 0.6);
-}/* ============ REORGANIZE + UNDO ============ */
-.controls button.secondary:disabled,
-.controls button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* Reorganize modal card selection glow */
+/* ============ MODAL SUB-ELEMENTS ============ */
 .modal .completed-set .mini-card {
   transition: outline 0.1s, transform 0.15s;
   cursor: pointer;
 }
-
 .modal .completed-set .mini-card:hover {
   transform: translateY(-4px);
 }
-
-.modal .mini-card {
-  cursor: pointer;
-}
-
+.modal .mini-card { cursor: pointer; }
 .modal h3 {
   font-size: 14px;
-  color: #c9a227;
+  color: var(--silver);
   text-transform: uppercase;
   letter-spacing: 1px;
   margin-top: 16px;

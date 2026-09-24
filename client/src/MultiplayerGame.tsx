@@ -3,6 +3,19 @@ import { Client, Room } from 'colyseus.js';
 import { getCardById } from '../../shared/cards';
 
 const SERVER_URL = 'wss://hora-deal-server.onrender.com';
+
+// ============ COLOR PALETTE ============
+const C = {
+  navyDeep: '#0A0A0A',      // pure black
+  navyMid: '#141414',       // soft black
+  black: '#0A0A0A',         // black
+  charcoal: '#2E2E2E',      // grey dark
+  grey: '#4A4A4A',          // grey mid
+  greyLight: '#C0C0C0',     // silver
+  greenMuted: '#8A8A8A',    // grey light
+  white: '#E8E8E8',         // white silver
+};
+
 // ============ TYPES ============
 interface ServerPlayer {
   seat: number;
@@ -50,7 +63,6 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
   const roomRef = useRef<Room | null>(null);
   const latestGameStateRef = useRef<ServerGameState | null>(null);
 
-  // Keep latest state in a ref (for interval polling)
   useEffect(() => {
     latestGameStateRef.current = gameState;
   }, [gameState]);
@@ -137,13 +149,8 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
 
   // ============ RENDER ============
   return (
-    <div style={{ padding: 20, color: '#eee', background: '#1a1a2e', minHeight: '100vh' }}>
-            <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 20,
-      }}>
+    <div style={{ padding: 20, color: C.white, background: C.black, minHeight: '100vh' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <button onClick={handleBack} style={backButtonStyle}>← Back</button>
         <img
           src="/cards/logo.png"
@@ -151,7 +158,7 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
           style={{
             height: 60,
             width: 'auto',
-            filter: 'drop-shadow(0 4px 16px rgba(233,69,96,0.4))',
+            filter: 'drop-shadow(0 4px 16px rgba(232,232,232,0.35))',
           }}
         />
         <div style={{ width: 80 }} />
@@ -167,7 +174,7 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
       {screen === 'connect' && (
         <div style={cardStyle}>
           <h3>1. Connect to Server</h3>
-          <p style={{ color: '#aaa' }}>Server: {SERVER_URL}</p>
+          <p style={{ color: C.greyLight }}>Server: {SERVER_URL}</p>
           <button onClick={connect} style={primaryButtonStyle}>Connect</button>
         </div>
       )}
@@ -187,7 +194,7 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
           <button onClick={createRoom} style={{ ...primaryButtonStyle, marginBottom: 20 }}>
             Create Room (Host)
           </button>
-          <div style={{ borderTop: '1px solid #333', paddingTop: 20 }}>
+          <div style={{ borderTop: `1px solid ${C.grey}`, paddingTop: 20 }}>
             <label style={{ display: 'block', marginBottom: 6 }}>Or join an existing room:</label>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
@@ -205,8 +212,8 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
       {screen === 'waiting' && (
         <div style={cardStyle}>
           <h3>3. Waiting for Players</h3>
-          <p style={{ fontSize: 18 }}>Room Code: <strong style={{ color: '#e94560' }}>{roomCode}</strong></p>
-          <p style={{ color: '#aaa' }}>Share this code with your friends.</p>
+          <p style={{ fontSize: 18 }}>Room Code: <strong style={{ color: C.white }}>{roomCode}</strong></p>
+          <p style={{ color: C.greyLight }}>Share this code with your friends.</p>
           <p style={{ marginTop: 20 }}>Connected: {connectedPlayers.length || 1} player(s)</p>
           <ul style={{ paddingLeft: 20 }}>
             {connectedPlayers.map((p, i) => (
@@ -216,7 +223,7 @@ export default function MultiplayerGame({ onBack }: { onBack: () => void }) {
           </ul>
           <button
             onClick={() => roomRef.current?.send('start_game', {})}
-            style={{ ...primaryButtonStyle, marginTop: 20, background: '#2d8f4e' }}
+            style={{ ...primaryButtonStyle, marginTop: 20 }}
           >
             Start Game
           </button>
@@ -255,7 +262,6 @@ function GameBoard({
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<{ cardId: string } | null>(null);
 
-  // ============ SEND ACTIONS ============
   const send = (type: string, payload: any = {}) => room?.send(type, payload);
 
   function handleCardClick(cardId: string) {
@@ -273,22 +279,21 @@ function GameBoard({
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-      {/* Header */}
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: 10, background: '#252547', borderRadius: 10, marginBottom: 12,
+        padding: 10, background: C.navyDeep, borderRadius: 10, marginBottom: 12,
+        border: `1px solid ${C.grey}`,
       }}>
         <button onClick={onLeave} style={{ ...backButtonStyle, fontSize: 12 }}>← Leave</button>
         <div style={{ textAlign: 'center', fontSize: 13 }}>
           <div><strong>{me.name}</strong> (Seat {mySeat + 1})</div>
-          <div style={{ color: '#aaa', fontSize: 11 }}>
+          <div style={{ color: C.greyLight, fontSize: 11 }}>
             Rank {me.rank} · Hand {me.handCount} · Fund {me.fundTotal} BN
           </div>
         </div>
         <div style={{ width: 80 }} />
       </div>
 
-      {/* Opponents */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: `repeat(${Math.min(opponents.length, 4)}, 1fr)`,
@@ -303,30 +308,28 @@ function GameBoard({
         ))}
       </div>
 
-      {/* Middle bar */}
       <div style={{
         display: 'flex', justifyContent: 'space-between',
-        padding: '8px 16px', background: '#252547', borderRadius: 10,
-        marginBottom: 12, fontSize: 13,
+        padding: '8px 16px', background: C.navyDeep, borderRadius: 10,
+        marginBottom: 12, fontSize: 13, border: `1px solid ${C.grey}`, flexWrap: 'wrap', gap: 8,
       }}>
         <div>Draw: {gameState.drawPile.length}</div>
         <div>Bank: {gameState.centralBank.length}</div>
-        <div style={{ color: isMyTurn ? '#e94560' : '#aaa', fontWeight: 'bold' }}>
+        <div style={{ color: isMyTurn ? C.white : C.greyLight, fontWeight: 'bold' }}>
           {isMyTurn ? 'YOUR TURN' : `${gameState.players[gameState.currentTurn].name}'s turn`}
         </div>
         <div>Plays: {playsRemaining}/{gameState.maxPlaysPerTurn}</div>
         <div>Discard: {gameState.commonDiscard.length}</div>
       </div>
 
-      {/* My completed sets */}
       {me.completedSets.length > 0 && (
         <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 11, color: '#c9a227', marginBottom: 4 }}>YOUR COMPLETED SETS</div>
+          <div style={{ fontSize: 11, color: C.greyLight, marginBottom: 4 }}>YOUR COMPLETED SETS</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {me.completedSets.map((set, i) => (
               <div key={i} style={{
                 display: 'flex', gap: 3, padding: 6,
-                background: 'rgba(201,162,39,0.2)', border: '2px solid #c9a227', borderRadius: 8,
+                background: C.navyMid, border: `2px solid ${C.grey}`, borderRadius: 8,
               }}>
                 {set.map(id => <MiniCard key={id} cardId={id} />)}
               </div>
@@ -335,20 +338,18 @@ function GameBoard({
         </div>
       )}
 
-      {/* My loose power */}
       {me.powerCards.length > 0 && (
         <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 11, color: '#c9a227', marginBottom: 4 }}>YOUR LOOSE POWER</div>
+          <div style={{ fontSize: 11, color: C.greyLight, marginBottom: 4 }}>YOUR LOOSE POWER</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {me.powerCards.map(id => <MiniCard key={id} cardId={id} />)}
           </div>
         </div>
       )}
 
-      {/* My fund */}
       {me.campaignFund.length > 0 && (
         <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 11, color: '#2d8f4e', marginBottom: 4 }}>
+          <div style={{ fontSize: 11, color: C.greenMuted, marginBottom: 4 }}>
             YOUR FUND ({me.fundTotal} BN)
           </div>
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -357,9 +358,8 @@ function GameBoard({
         </div>
       )}
 
-      {/* My hand */}
       <div style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 11, color: '#e94560', marginBottom: 4 }}>
+        <div style={{ fontSize: 11, color: C.greyLight, marginBottom: 4 }}>
           YOUR HAND ({me.hand.length}){selectedCardId && ' — click again to play'}
         </div>
         <div style={{
@@ -378,7 +378,6 @@ function GameBoard({
         </div>
       </div>
 
-      {/* Controls */}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 12, flexWrap: 'wrap' }}>
         {isMyTurn && !gameState.turnStarted && (
           <button onClick={() => send('start_turn')} style={primaryButtonStyle}>
@@ -392,16 +391,15 @@ function GameBoard({
         )}
       </div>
 
-      {/* Log */}
       <div style={{
-        marginTop: 12, padding: 10, background: 'rgba(0,0,0,0.4)',
+        marginTop: 12, padding: 10, background: C.navyDeep,
+        border: `1px solid ${C.grey}`,
         borderRadius: 8, fontSize: 11, fontFamily: 'monospace',
-        color: '#aaa', maxHeight: 100, overflowY: 'auto',
+        color: C.greyLight, maxHeight: 100, overflowY: 'auto',
       }}>
         {gameState.log.slice(-6).map((line, i) => <div key={i}>{line}</div>)}
       </div>
 
-      {/* Action choice modal */}
       {pendingAction && (
         <ActionChoiceModal
           cardId={pendingAction.cardId}
@@ -411,7 +409,6 @@ function GameBoard({
         />
       )}
 
-      {/* Server-driven modal */}
       {gameState.pending && gameState.pending.type !== 'none' && (
         <PendingModal
           gameState={gameState}
@@ -427,18 +424,19 @@ function GameBoard({
 function OpponentTile({ player, isActiveTurn }: { player: ServerPlayer; isActiveTurn: boolean }) {
   return (
     <div style={{
-      background: isActiveTurn ? 'rgba(233,69,96,0.15)' : 'rgba(255,255,255,0.05)',
-      border: isActiveTurn ? '2px solid #e94560' : '2px solid transparent',
+      background: isActiveTurn ? C.navyMid : C.navyDeep,
+      border: isActiveTurn ? `2px solid ${C.greyLight}` : `2px solid ${C.grey}`,
       borderRadius: 10, padding: 8,
     }}>
       <div style={{ fontSize: 12, fontWeight: 'bold' }}>{player.name}</div>
-      <div style={{ fontSize: 10, color: '#aaa' }}>
+      <div style={{ fontSize: 10, color: C.greyLight }}>
         Rank {player.rank} · Hand {player.handCount} · Fund {player.fundTotal} BN · Sets {player.completedSets.length}/3
       </div>
       {player.skipTurns > 0 && (
         <div style={{
-          fontSize: 10, background: '#c73650', padding: '2px 6px',
+          fontSize: 10, background: C.charcoal, padding: '2px 6px',
           borderRadius: 4, display: 'inline-block', marginTop: 4,
+          border: `1px solid ${C.grey}`, color: C.white,
         }}>
           Skip: {player.skipTurns}
         </div>
@@ -448,8 +446,8 @@ function OpponentTile({ player, isActiveTurn }: { player: ServerPlayer; isActive
           {player.completedSets.map((set, i) => (
             <div key={i} style={{
               display: 'flex', gap: 2, padding: 3,
-              background: 'rgba(201,162,39,0.2)',
-              border: '1px solid #c9a227', borderRadius: 4,
+              background: C.navyMid,
+              border: `1px solid ${C.grey}`, borderRadius: 4,
             }}>
               {set.map(id => <MiniCard key={id} cardId={id} small />)}
             </div>
@@ -481,8 +479,8 @@ function MiniCard({ cardId, small, selected, onClick }: {
       title={card.name}
       style={{
         width, height, borderRadius: 6, overflow: 'hidden',
-        border: selected ? '2px solid #fff' : '1px solid rgba(0,0,0,0.3)',
-        boxShadow: selected ? '0 0 0 2px #fff' : undefined,
+        border: selected ? `2px solid ${C.white}` : `1px solid ${C.grey}`,
+        boxShadow: selected ? `0 0 0 2px ${C.white}` : undefined,
         cursor: onClick ? 'pointer' : 'default',
       }}
     >
@@ -491,7 +489,8 @@ function MiniCard({ cardId, small, selected, onClick }: {
     </div>
   );
 }
-// ============ ACTION CHOICE MODAL (fund vs action) ============
+
+// ============ ACTION CHOICE MODAL ============
 function ActionChoiceModal({ cardId, onFund, onAction, onCancel }: {
   cardId: string;
   onFund: () => void;
@@ -503,12 +502,12 @@ function ActionChoiceModal({ cardId, onFund, onAction, onCancel }: {
     <div style={overlayStyle}>
       <div style={modalStyle}>
         <h3>{card.name}</h3>
-        <p style={{ color: '#aaa' }}>{card.bankValue} BN value</p>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginBottom: 12 }}>
-          <button onClick={onFund} style={{ ...primaryButtonStyle, background: '#2d8f4e' }}>
+        <p style={{ color: C.greyLight }}>{card.bankValue} BN value</p>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+          <button onClick={onFund} style={{ ...primaryButtonStyle }}>
             💰 Fund ({card.bankValue} BN)
           </button>
-          <button onClick={onAction} style={{ ...primaryButtonStyle, background: '#c9a227', color: '#000' }}>
+          <button onClick={onAction} style={{ ...primaryButtonStyle }}>
             ⚡ Action
           </button>
         </div>
@@ -665,7 +664,7 @@ function WaitingBanner({ text }: { text: string }) {
     <div style={overlayStyle}>
       <div style={modalStyle}>
         <h3>⏳ Waiting...</h3>
-        <p style={{ color: '#aaa' }}>{text}</p>
+        <p style={{ color: C.greyLight }}>{text}</p>
       </div>
     </div>
   );
@@ -703,19 +702,20 @@ function SelectTargetModal({ gameState, purpose, onSelect }: {
   gameState: ServerGameState;
   purpose: string;
   onSelect: (seat: number) => void;
-}) {  const others = gameState.players.filter((p: ServerPlayer) => p.seat !== gameState.viewerSeat);
+}) {
+  const others = gameState.players.filter((p: ServerPlayer) => p.seat !== gameState.viewerSeat);
   return (
     <div style={overlayStyle}>
       <div style={modalStyle}>
         <h3>Select Target</h3>
-        <p style={{ color: '#aaa' }}>{PURPOSE_PROMPTS[purpose] || 'Choose a target.'}</p>
+        <p style={{ color: C.greyLight }}>{PURPOSE_PROMPTS[purpose] || 'Choose a target.'}</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {others.map((p: ServerPlayer) => (
             <button
               key={p.seat}
               onClick={() => onSelect(p.seat)}
               style={{
-                ...primaryButtonStyle, background: '#2d8f4e',
+                ...primaryButtonStyle,
                 display: 'flex', justifyContent: 'space-between',
               }}
             >
@@ -763,7 +763,7 @@ function PaymentModal({ payer, amount, onConfirm }: {
     <div style={overlayStyle}>
       <div style={{ ...modalStyle, maxWidth: 800 }}>
         <h3>{payer.name} Must Pay {amount} BN</h3>
-        <p style={{ color: '#aaa', fontSize: 13 }}>
+        <p style={{ color: C.greyLight, fontSize: 13 }}>
           {mustPayAll
             ? `Not enough — must give everything (${totalAvailable} BN).`
             : `Select cards totaling at least ${amount} BN. No change given.`}
@@ -775,7 +775,7 @@ function PaymentModal({ payer, amount, onConfirm }: {
             return (
               <div key={id} onClick={() => toggle(id)} style={{
                 opacity: selected.includes(id) ? 1 : 0.7,
-                border: inSet ? '2px solid #c9a227' : undefined,
+                border: inSet ? `2px solid ${C.greyLight}` : undefined,
                 borderRadius: 6, cursor: 'pointer',
               }}>
                 <MiniCard cardId={id} />
@@ -785,7 +785,7 @@ function PaymentModal({ payer, amount, onConfirm }: {
         </div>
         <div style={{ marginTop: 12 }}>
           {!mustPayAll && (
-            <button onClick={autoFill} style={{ ...primaryButtonStyle, background: '#2d8f4e', marginRight: 8 }}>
+            <button onClick={autoFill} style={{ ...primaryButtonStyle, marginRight: 8 }}>
               🪄 Auto-Pick
             </button>
           )}
@@ -826,7 +826,7 @@ function WildChoiceModal({ me, onChoose }: {
         <h3>Common Candidate — Choose a Set</h3>
         {targets.length === 0 ? (
           <>
-            <p style={{ color: '#aaa' }}>No incomplete sets.</p>
+            <p style={{ color: C.greyLight }}>No incomplete sets.</p>
             <button onClick={() => onChoose('loose')} style={secondaryButtonStyle}>Keep Loose</button>
           </>
         ) : (
@@ -835,7 +835,7 @@ function WildChoiceModal({ me, onChoose }: {
               <button
                 key={t.setKey}
                 onClick={() => onChoose(t.setKey)}
-                style={{ ...primaryButtonStyle, background: '#c9a227', color: '#000' }}
+                style={{ ...primaryButtonStyle }}
               >
                 {getCardById(t.existing[0]).name} ({t.existing.length}/{t.setSize})
               </button>
@@ -857,7 +857,7 @@ function PickPowerCardModal({ target, onPick, onCancel }: {
     <div style={overlayStyle}>
       <div style={{ ...modalStyle, maxWidth: 700 }}>
         <h3>No Confidence Motion</h3>
-        <p style={{ color: '#aaa' }}>Choose which Power Card to steal from {target.name}.</p>
+        <p style={{ color: C.greyLight }}>Choose which Power Card to steal from {target.name}.</p>
         {target.powerCards.length === 0 ? (
           <>
             <p>No loose Power Cards to steal.</p>
@@ -886,7 +886,7 @@ function PickSetModal({ target, onPick, onCancel }: {
     <div style={overlayStyle}>
       <div style={{ ...modalStyle, maxWidth: 700 }}>
         <h3>Cabinet Reshuffle</h3>
-        <p style={{ color: '#aaa' }}>Choose which set to steal from {target.name}.</p>
+        <p style={{ color: C.greyLight }}>Choose which set to steal from {target.name}.</p>
         {target.completedSets.length === 0 ? (
           <>
             <p>No complete sets to steal.</p>
@@ -897,7 +897,8 @@ function PickSetModal({ target, onPick, onCancel }: {
             {target.completedSets.map((set, i) => (
               <div key={i} onClick={() => onPick(i)} style={{
                 cursor: 'pointer', padding: 6,
-                background: 'rgba(201,162,39,0.2)', borderRadius: 8,
+                background: C.navyMid, borderRadius: 8,
+                border: `1px solid ${C.grey}`,
               }}>
                 <div style={{ display: 'flex', gap: 3 }}>
                   {set.map(id => <MiniCard key={id} cardId={id} />)}
@@ -947,7 +948,8 @@ function ReactionModal({ actingPlayer, targetPlayer, actingCardName, availableRe
   availableReactions: string[];
   onReact: (key: string) => void;
   onAccept: () => void;
-}) {  const labels: Record<string, string> = {
+}) {
+  const labels: Record<string, string> = {
     mathaka: '🧠 Mathaka Na',
     father: '👨 Do You Know My Father',
     protest: '📢 Public Protest',
@@ -956,10 +958,10 @@ function ReactionModal({ actingPlayer, targetPlayer, actingCardName, availableRe
     <div style={overlayStyle}>
       <div style={modalStyle}>
         <h3>⚠️ {actingPlayer.name} played {actingCardName}</h3>
-        <p style={{ color: '#aaa' }}>{targetPlayer.name}, react?</p>
+        <p style={{ color: C.greyLight }}>{targetPlayer.name}, react?</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {availableReactions.map((key: string) => (
-            <button key={key} onClick={() => onReact(key)} style={{ ...primaryButtonStyle, background: '#c9a227', color: '#000' }}>
+            <button key={key} onClick={() => onReact(key)} style={{ ...primaryButtonStyle }}>
               {labels[key]}
             </button>
           ))}
@@ -975,14 +977,15 @@ function EpaWindowModal({ epaPlayer, winningPlayer, onPlay, onSkip }: {
   winningPlayer: ServerPlayer;
   onPlay: () => void;
   onSkip: () => void;
-}) {  return (
+}) {
+  return (
     <div style={overlayStyle}>
       <div style={modalStyle}>
         <h3>⚠️ {winningPlayer.name} is about to win!</h3>
-        <p style={{ color: '#aaa' }}>
+        <p style={{ color: C.greyLight }}>
           {epaPlayer.name}, play Executive Presidency Abolished to destroy their last set?
         </p>
-        <button onClick={onPlay} style={{ ...primaryButtonStyle, background: '#c9a227', color: '#000' }}>
+        <button onClick={onPlay} style={{ ...primaryButtonStyle }}>
           ⚡ Play E.P.A.
         </button>
         <button onClick={onSkip} style={{ ...secondaryButtonStyle, marginTop: 12 }}>Let them win</button>
@@ -997,7 +1000,8 @@ function EpaReactModal({ winningPlayer, epaPlayer, winningHand, onReact, onAccep
   winningHand: string[];
   onReact: (key: 'father' | 'protest') => void;
   onAccept: () => void;
-}) {  const reactions: ('father' | 'protest')[] = [];
+}) {
+  const reactions: ('father' | 'protest')[] = [];
   if (winningHand.some((id: string) => getCardById(id).effectKey === 'father')) reactions.push('father');
   if (winningHand.some((id: string) => getCardById(id).effectKey === 'protest')) reactions.push('protest');
   const labels: Record<string, string> = {
@@ -1008,10 +1012,10 @@ function EpaReactModal({ winningPlayer, epaPlayer, winningHand, onReact, onAccep
     <div style={overlayStyle}>
       <div style={modalStyle}>
         <h3>⚠️ {epaPlayer.name} played E.P.A.!</h3>
-        <p style={{ color: '#aaa' }}>{winningPlayer.name}, react to save your victory?</p>
+        <p style={{ color: C.greyLight }}>{winningPlayer.name}, react to save your victory?</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {reactions.map(k => (
-            <button key={k} onClick={() => onReact(k)} style={{ ...primaryButtonStyle, background: '#c9a227', color: '#000' }}>
+            <button key={k} onClick={() => onReact(k)} style={{ ...primaryButtonStyle }}>
               🛡 {labels[k]}
             </button>
           ))}
@@ -1024,40 +1028,98 @@ function EpaReactModal({ winningPlayer, epaPlayer, winningHand, onReact, onAccep
 
 // ============ STYLES ============
 const cardStyle: React.CSSProperties = {
-  background: '#252547', padding: 20, borderRadius: 12, marginBottom: 16,
-  maxWidth: 500, margin: '0 auto',
+  background: C.navyDeep,
+  border: `1px solid ${C.grey}`,
+  padding: 20,
+  borderRadius: 12,
+  marginBottom: 16,
+  maxWidth: 500,
+  margin: '0 auto',
+  color: C.white,
 };
+
 const backButtonStyle: React.CSSProperties = {
-  background: '#444', color: '#fff', padding: '8px 16px',
-  border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 'bold',
+  background: C.charcoal,
+  color: C.white,
+  padding: '8px 16px',
+  border: `1px solid ${C.grey}`,
+  borderRadius: 8,
+  cursor: 'pointer',
+  fontWeight: 'bold',
 };
+
 const primaryButtonStyle: React.CSSProperties = {
-  background: '#e94560', color: '#fff', padding: '10px 24px',
-  border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 'bold', fontSize: 14,
+  background: C.navyMid,
+  color: C.white,
+  padding: '10px 24px',
+  border: `1px solid ${C.grey}`,
+  borderRadius: 8,
+  cursor: 'pointer',
+  fontWeight: 'bold',
+  fontSize: 14,
 };
+
 const secondaryButtonStyle: React.CSSProperties = {
-  background: '#444', color: '#fff', padding: '10px 24px',
-  border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13,
+  background: C.charcoal,
+  color: C.white,
+  padding: '10px 24px',
+  border: `1px solid ${C.grey}`,
+  borderRadius: 8,
+  cursor: 'pointer',
+  fontSize: 13,
 };
+
 const inputStyle: React.CSSProperties = {
-  padding: 10, background: '#1a1a2e', color: '#eee',
-  border: '1px solid #444', borderRadius: 6, fontSize: 14, width: '100%',
+  padding: 10,
+  background: C.black,
+  color: C.white,
+  border: `1px solid ${C.grey}`,
+  borderRadius: 6,
+  fontSize: 14,
+  width: '100%',
 };
+
 const errorStyle: React.CSSProperties = {
-  background: '#c73650', padding: 12, borderRadius: 8, marginBottom: 16,
-  maxWidth: 500, margin: '0 auto 16px auto', textAlign: 'center',
+  background: C.charcoal,
+  border: `1px solid ${C.grey}`,
+  color: C.white,
+  padding: 12,
+  borderRadius: 8,
+  marginBottom: 16,
+  maxWidth: 500,
+  margin: '0 auto 16px auto',
+  textAlign: 'center',
 };
+
 const dismissButtonStyle: React.CSSProperties = {
-  marginLeft: 12, background: 'transparent', color: '#fff',
-  border: '1px solid #fff', borderRadius: 4, padding: '2px 8px',
-  cursor: 'pointer', fontSize: 12,
+  marginLeft: 12,
+  background: 'transparent',
+  color: C.white,
+  border: `1px solid ${C.greyLight}`,
+  borderRadius: 4,
+  padding: '2px 8px',
+  cursor: 'pointer',
+  fontSize: 12,
 };
+
 const overlayStyle: React.CSSProperties = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  zIndex: 1000, padding: 20,
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(4, 6, 11, 0.88)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 1000,
+  padding: 20,
 };
+
 const modalStyle: React.CSSProperties = {
-  background: '#252547', border: '2px solid #e94560', borderRadius: 14,
-  padding: 24, maxWidth: 500, width: '100%', textAlign: 'center', color: '#eee',
+  background: C.navyDeep,
+  border: `2px solid ${C.grey}`,
+  borderRadius: 14,
+  padding: 24,
+  maxWidth: 500,
+  width: '100%',
+  textAlign: 'center',
+  color: C.white,
 };

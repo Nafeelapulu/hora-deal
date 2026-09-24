@@ -4,6 +4,18 @@ import './App.css';
 import MultiplayerGame from './MultiplayerGame';
 import CardGallery from './CardGallery';
 
+// ============ COLOR PALETTE ============
+const C = {
+  navyDeep: '#0A0A0A',      // pure black
+  navyMid: '#141414',       // soft black
+  black: '#0A0A0A',         // black
+  charcoal: '#2E2E2E',      // grey dark
+  grey: '#4A4A4A',          // grey mid
+  greyLight: '#C0C0C0',     // silver
+  greenMuted: '#8A8A8A',    // grey light
+  white: '#E8E8E8',         // white silver
+};
+
 // ============ TYPES ============
 interface Player {
   seat: number;
@@ -242,7 +254,6 @@ function findNextEpaHolder(g: GameState, winningSeat: number, startFrom: number)
 function App() {
   const [screen, setScreen] = useState<AppScreen>('menu');
 
-  // Menu
   if (screen === 'menu') {
     return <MainMenu onNavigate={setScreen} />;
   }
@@ -253,12 +264,12 @@ function App() {
 
   if (screen === 'gallery') {
     return (
-      <div>
+      <div style={{ background: C.black, minHeight: '100vh' }}>
         <div style={{
           padding: '10px 20px',
           display: 'flex',
           justifyContent: 'flex-start',
-          background: '#1a1a2e',
+          background: C.black,
         }}>
           <button onClick={() => setScreen('menu')} style={menuBackButtonStyle}>
             ← Back to Menu
@@ -285,15 +296,15 @@ function MainMenu({ onNavigate }: { onNavigate: (s: AppScreen) => void }) {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f1a2e 100%)',
+      background: 'linear-gradient(135deg, #0A0A0A 0%, #1E1E1E 50%, #0A0A0A 100%)',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
       padding: 20,
-      color: '#eee',
+      color: C.white,
     }}>
-            <div style={{ textAlign: 'center', marginBottom: 40, padding: '0 16px', width: '100%', maxWidth: 600 }}>
+      <div style={{ textAlign: 'center', marginBottom: 40, padding: '0 16px', width: '100%', maxWidth: 600 }}>
         <img
           src="/cards/logo.png"
           alt="හොර DEAL"
@@ -301,7 +312,7 @@ function MainMenu({ onNavigate }: { onNavigate: (s: AppScreen) => void }) {
             width: 'clamp(200px, 55vw, 360px)',
             height: 'auto',
             marginBottom: '16px',
-            filter: 'drop-shadow(0 6px 24px rgba(233,69,96,0.5))',
+            filter: 'drop-shadow(0 6px 24px rgba(232,232,232,0.35))',
             display: 'block',
             marginLeft: 'auto',
             marginRight: 'auto',
@@ -309,7 +320,7 @@ function MainMenu({ onNavigate }: { onNavigate: (s: AppScreen) => void }) {
         />
         <p style={{
           fontSize: 'clamp(1rem, 3vw, 1.2rem)',
-          color: '#c9a227',
+          color: C.greyLight,
           margin: '0 0 8px 0',
           fontWeight: 'bold',
           letterSpacing: 1,
@@ -319,7 +330,7 @@ function MainMenu({ onNavigate }: { onNavigate: (s: AppScreen) => void }) {
         </p>
         <p style={{
           fontSize: 'clamp(0.8rem, 2.5vw, 0.9rem)',
-          color: '#888',
+          color: C.greenMuted,
           margin: 0,
           lineHeight: 1.4,
         }}>
@@ -331,31 +342,26 @@ function MainMenu({ onNavigate }: { onNavigate: (s: AppScreen) => void }) {
         <MenuButton
           label="🎮 Play Local"
           subtitle="2 players · hot-seat"
-          color="#e94560"
           onClick={() => onNavigate('local')}
         />
         <MenuButton
           label="🌐 Play Online"
           subtitle="Multiplayer with friends"
-          color="#2d8f4e"
           onClick={() => onNavigate('online')}
         />
         <MenuButton
           label="📖 How to Play"
           subtitle="Rules & cards"
-          color="#c9a227"
-          dark
           onClick={() => onNavigate('rules')}
         />
         <MenuButton
           label="🎴 Card Gallery"
           subtitle="View all 106 cards"
-          color="#6c5ce7"
           onClick={() => onNavigate('gallery')}
         />
       </div>
 
-      <p style={{ marginTop: 40, fontSize: 11, color: '#555' }}>
+      <p style={{ marginTop: 40, fontSize: 11, color: C.grey }}>
         v1.0 · Made by you · Enjoy!
       </p>
     </div>
@@ -363,12 +369,10 @@ function MainMenu({ onNavigate }: { onNavigate: (s: AppScreen) => void }) {
 }
 
 function MenuButton({
-  label, subtitle, color, dark, onClick,
+  label, subtitle, onClick,
 }: {
   label: string;
   subtitle: string;
-  color: string;
-  dark?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -376,31 +380,37 @@ function MenuButton({
       onClick={onClick}
       style={{
         padding: '18px 24px',
-        background: color,
-        color: dark ? '#000' : '#fff',
-        border: 'none',
+        background: C.navyMid,
+        color: C.white,
+        border: `1px solid ${C.grey}`,
         borderRadius: 12,
         cursor: 'pointer',
         textAlign: 'left',
         fontSize: 18,
         fontWeight: 'bold',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-        transition: 'transform 0.15s, box-shadow 0.15s',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.6)',
+        transition: 'transform 0.15s, box-shadow 0.15s, background 0.15s, border-color 0.15s',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
       }}
       onMouseEnter={e => {
-        (e.target as HTMLButtonElement).style.transform = 'translateY(-3px)';
-        (e.target as HTMLButtonElement).style.boxShadow = '0 8px 20px rgba(0,0,0,0.4)';
+        const el = e.target as HTMLButtonElement;
+        el.style.transform = 'translateY(-3px)';
+        el.style.boxShadow = '0 8px 20px rgba(232,232,232,0.15)';
+        el.style.background = C.charcoal;
+        el.style.borderColor = C.greyLight;
       }}
       onMouseLeave={e => {
-        (e.target as HTMLButtonElement).style.transform = 'translateY(0)';
-        (e.target as HTMLButtonElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+        const el = e.target as HTMLButtonElement;
+        el.style.transform = 'translateY(0)';
+        el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.6)';
+        el.style.background = C.navyMid;
+        el.style.borderColor = C.grey;
       }}
     >
       <span>{label}</span>
-      <span style={{ fontSize: 11, opacity: 0.85, fontWeight: 'normal' }}>{subtitle}</span>
+      <span style={{ fontSize: 11, opacity: 0.7, fontWeight: 'normal' }}>{subtitle}</span>
     </button>
   );
 }
@@ -410,16 +420,16 @@ function RulesScreen({ onBack }: { onBack: () => void }) {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#1a1a2e',
-      color: '#eee',
+      background: C.black,
+      color: C.white,
       padding: 20,
     }}>
       <div style={{ maxWidth: 800, margin: '0 auto' }}>
         <button onClick={onBack} style={menuBackButtonStyle}>← Back to Menu</button>
 
-                <h1 style={{
+        <h1 style={{
           fontSize: 'clamp(1.5rem, 5vw, 2.5rem)',
-          color: '#e94560',
+          color: C.white,
           marginTop: 20,
           marginBottom: 8,
           lineHeight: 1.2,
@@ -428,7 +438,7 @@ function RulesScreen({ onBack }: { onBack: () => void }) {
           හොර DEAL - How to Play
         </h1>
         <p style={{
-          color: '#c9a227',
+          color: C.greyLight,
           marginTop: 0,
           fontSize: 'clamp(0.9rem, 2.5vw, 1rem)',
           lineHeight: 1.4,
@@ -462,7 +472,7 @@ function RulesScreen({ onBack }: { onBack: () => void }) {
 
         <Section title="💰 Campaign Fund">
           <p>Money in your Fund pile is used to pay for cards. You can also pay with Power Cards (including cards in your completed sets, which breaks the set).</p>
-          <p style={{ marginTop: 8, color: '#aaa', fontSize: 14 }}>No change is given — if you overpay, you overpay.</p>
+          <p style={{ marginTop: 8, color: C.greyLight, fontSize: 14 }}>No change is given — if you overpay, you overpay.</p>
         </Section>
 
         <Section title="👑 Power Cards & Sets">
@@ -480,7 +490,7 @@ function RulesScreen({ onBack }: { onBack: () => void }) {
             <li><strong>Play as Fund</strong> — bank it for its BN value.</li>
             <li><strong>Play as Action</strong> — resolve its special effect.</li>
           </ul>
-          <p style={{ marginTop: 12, fontSize: 14, color: '#aaa' }}>
+          <p style={{ marginTop: 12, fontSize: 14, color: C.greyLight }}>
             Highlights include Bribe, No Confidence Motion, Cabinet Reshuffle, CoupLK, and Bond Scam.
           </p>
         </Section>
@@ -492,7 +502,7 @@ function RulesScreen({ onBack }: { onBack: () => void }) {
             <li><strong>Do You Know My Father</strong> — cancels any Action Card.</li>
             <li><strong>Public Protest</strong> — cancels any Action Card.</li>
           </ul>
-          <p style={{ marginTop: 12, fontSize: 14, color: '#aaa' }}>
+          <p style={{ marginTop: 12, fontSize: 14, color: C.greyLight }}>
             Only the target can react. No timer — decide at your own pace.
           </p>
         </Section>
@@ -528,13 +538,14 @@ function RulesScreen({ onBack }: { onBack: () => void }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{
-      background: '#252547',
+      background: C.navyMid,
+      border: `1px solid ${C.grey}`,
       padding: 20,
       borderRadius: 12,
       marginBottom: 16,
     }}>
       <h2 style={{
-        color: '#c9a227',
+        color: C.greyLight,
         fontSize: 'clamp(1rem, 3vw, 1.2rem)',
         marginTop: 0,
         marginBottom: 12,
@@ -554,15 +565,15 @@ function RankLine({ rank, sets, highlight }: { rank: string; sets: number; highl
       display: 'flex',
       justifyContent: 'space-between',
       padding: '6px 12px',
-      background: highlight ? 'rgba(201,162,39,0.2)' : 'rgba(255,255,255,0.05)',
+      background: highlight ? C.charcoal : 'rgba(232,232,232,0.05)',
       borderRadius: 6,
       marginBottom: 4,
-      border: highlight ? '1px solid #c9a227' : 'none',
+      border: highlight ? `1px solid ${C.greyLight}` : 'none',
     }}>
-      <span style={{ color: highlight ? '#c9a227' : '#eee', fontWeight: highlight ? 'bold' : 'normal' }}>
+      <span style={{ color: highlight ? C.white : C.greyLight, fontWeight: highlight ? 'bold' : 'normal' }}>
         {rank}
       </span>
-      <span style={{ color: '#888', fontSize: 13 }}>{sets} set{sets !== 1 ? 's' : ''}</span>
+      <span style={{ color: C.greenMuted, fontSize: 13 }}>{sets} set{sets !== 1 ? 's' : ''}</span>
     </div>
   );
 }
@@ -1462,7 +1473,7 @@ function LocalGame({ onBack }: { onBack: () => void }) {
       <div className="app">
         <h1>🏆 {game.players[game.winnerSeat].name} is President!</h1>
         <button onClick={resetGame}>Play Again</button>
-        <button onClick={onBack} style={{ background: '#444', marginTop: 12 }}>← Back to Menu</button>
+        <button onClick={onBack} style={{ background: C.charcoal, marginTop: 12 }}>← Back to Menu</button>
       </div>
     );
   }
@@ -1913,7 +1924,7 @@ function PaymentModal({ payer, amount, onConfirm }: {
             const inSet = payer.completedSets.some(set => set.includes(id));
             return (
               <div key={id} className={`mini-card ${selected.includes(id) ? 'selected' : ''}`}
-                style={{ opacity: selected.includes(id) ? 1 : 0.7, border: inSet ? '3px solid #c9a227' : undefined }}
+                style={{ opacity: selected.includes(id) ? 1 : 0.7, border: inSet ? `3px solid ${C.greyLight}` : undefined }}
                 onClick={() => toggle(id)}>
                 <MiniCard cardId={id} />
               </div>
@@ -1942,7 +1953,7 @@ function WildChoiceModal({ targets, onChoose }: {
         <p className="modal-subtitle">Wild joins an incomplete set.</p>
         <div className="modal-buttons">
           {targets.length === 0 && (
-            <p style={{ color: '#aaa' }}>No incomplete sets — stays loose.</p>
+            <p style={{ color: C.greyLight }}>No incomplete sets — stays loose.</p>
           )}
           {targets.map(t => {
             const sample = getCardById(t.existing[0]);
@@ -2060,14 +2071,14 @@ function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
           Wilds cost 1 play · Non-wilds are free. Plays left: {playsRemaining}.
         </p>
 
-        <h3 style={{ marginTop: 12, fontSize: 14, color: '#c9a227' }}>Loose Power</h3>
+        <h3 style={{ marginTop: 12, fontSize: 14, color: C.greyLight }}>Loose Power</h3>
         <div className="trim-cards">
-          {player.powerCards.length === 0 && <p style={{ color: '#666' }}>None</p>}
+          {player.powerCards.length === 0 && <p style={{ color: C.grey }}>None</p>}
           {player.powerCards.map(id => {
             const isSel = selectedCard === id;
             return (
               <div key={id} className={`mini-card ${isSel ? 'selected' : ''}`}
-                style={{ outline: isSel ? '3px solid #fff' : undefined }}
+                style={{ outline: isSel ? `3px solid ${C.white}` : undefined }}
                 onClick={() => setSelectedCard(isSel ? null : id)}>
                 <MiniCard cardId={id} />
               </div>
@@ -2075,16 +2086,16 @@ function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
           })}
         </div>
 
-        <h3 style={{ marginTop: 16, fontSize: 14, color: '#c9a227' }}>Completed Sets</h3>
+        <h3 style={{ marginTop: 16, fontSize: 14, color: C.greyLight }}>Completed Sets</h3>
         <div className="trim-cards">
-          {player.completedSets.length === 0 && <p style={{ color: '#666' }}>None</p>}
+          {player.completedSets.length === 0 && <p style={{ color: C.grey }}>None</p>}
           {player.completedSets.map((set, i) => (
             <div key={i} className="completed-set">
               {set.map(id => {
                 const isSel = selectedCard === id;
                 return (
                   <div key={id} className={`mini-card ${isSel ? 'selected' : ''}`}
-                    style={{ outline: isSel ? '3px solid #fff' : undefined }}
+                    style={{ outline: isSel ? `3px solid ${C.white}` : undefined }}
                     onClick={(e) => { e.stopPropagation(); setSelectedCard(isSel ? null : id); }}>
                     <MiniCard cardId={id} />
                   </div>
@@ -2096,14 +2107,14 @@ function ReorganizeModal({ player, playsRemaining, onMoveCard, onClose }: {
 
         {selectedCard && (
           <div style={{
-            marginTop: 20, padding: 12, background: 'rgba(255,255,255,0.06)',
+            marginTop: 20, padding: 12, background: 'rgba(232, 232, 232, 0.08)',
             borderRadius: 8, textAlign: 'left',
           }}>
             <p style={{ marginBottom: 8 }}>
               <strong>Selected:</strong> {card?.name}{' '}
               {cost > 0
-                ? <span style={{ color: '#e94560' }}>(Wild — 1 play)</span>
-                : <span style={{ color: '#2d8f4e' }}>(Free)</span>}
+                ? <span style={{ color: C.white }}>(Wild — 1 play)</span>
+                : <span style={{ color: C.greyLight }}>(Free)</span>}
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button className="btn-fund" onClick={handleMoveToLoose}>↩ Move to Loose</button>
@@ -2132,7 +2143,7 @@ function PickPowerCardModal({ target, onPick, onCancel }: {
         <p className="modal-subtitle">Pick a Power Card to steal from {target.name}.</p>
         {target.powerCards.length === 0 ? (
           <>
-            <p style={{ color: '#aaa' }}>No loose Power Cards to steal.</p>
+            <p style={{ color: C.grey }}>No loose Power Cards to steal.</p>
             <button className="btn-cancel" onClick={onCancel}>Cancel</button>
           </>
         ) : (
@@ -2162,7 +2173,7 @@ function PickSetModal({ target, onPick, onCancel }: {
         <p className="modal-subtitle">Pick a set to steal from {target.name}.</p>
         {target.completedSets.length === 0 ? (
           <>
-            <p style={{ color: '#aaa' }}>No complete sets to steal.</p>
+            <p style={{ color: C.grey }}>No complete sets to steal.</p>
             <button className="btn-cancel" onClick={onCancel}>Cancel</button>
           </>
         ) : (
@@ -2270,10 +2281,10 @@ function ReactionModal({
 
 // ============ SHARED STYLES ============
 const menuBackButtonStyle: React.CSSProperties = {
-  background: '#444',
-  color: '#fff',
+  background: C.charcoal,
+  color: C.white,
   padding: '8px 16px',
-  border: 'none',
+  border: `1px solid ${C.grey}`,
   borderRadius: 8,
   cursor: 'pointer',
   fontWeight: 'bold',
@@ -2281,10 +2292,10 @@ const menuBackButtonStyle: React.CSSProperties = {
 };
 
 const primaryButtonStyle: React.CSSProperties = {
-  background: '#e94560',
-  color: '#fff',
+  background: C.navyMid,
+  color: C.white,
   padding: '10px 24px',
-  border: 'none',
+  border: `1px solid ${C.grey}`,
   borderRadius: 8,
   cursor: 'pointer',
   fontWeight: 'bold',
